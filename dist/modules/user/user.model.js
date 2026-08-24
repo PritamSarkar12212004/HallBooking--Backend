@@ -27,6 +27,10 @@ const userSchema = new Schema({
         type: String,
         default: null,
     },
+    photo: {
+        type: String,
+        default: null,
+    },
     role: {
         type: String,
         enum: ["CEO", "OFFICE", "STAFF"],

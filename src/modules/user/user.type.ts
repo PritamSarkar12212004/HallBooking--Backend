@@ -6,6 +6,7 @@ export interface IUserDb extends Document {
     email: string;
     password: string;
     avatar?: string;
+    photo?: string;
     role: UserRoleDb;
     fcmToken: string;
     createdAt: Date;

@@ -11,6 +11,7 @@ export interface User {
     email: string;
     city: string;
     gender: UserGender;
+    photo?: string;
     role: UserRole;
     isProfileComplete: boolean;
 }
@@ -35,6 +36,7 @@ export interface SendOtpResult {
 
 export interface VerifyOtpResult {
     isNewUser: boolean;
+    isExistingUser: boolean;
     token: string;
     user: PublicUser;
 }

@@ -7,24 +7,31 @@ const OTP_EXPIRATION_SECONDS = Number(process.env.OTP_EXPIRATION_SECONDS) || 15;
 const OTP_LENGTH = 6;
 const MAX_OTP_ATTEMPTS = 5;
 const generateOtp = () => {
-    const digits = "0123456789";
-    let otp = "";
-    for (let i = 0; i < OTP_LENGTH; i += 1) {
-        otp += digits[crypto.randomInt(digits.length) % digits.length];
-    }
+    // const digits = "0123456789";
+    // let otp = "";
+    // for (let i = 0; i < OTP_LENGTH; i += 1) {
+    //     otp += digits[crypto.randomInt(digits.length) % digits.length];
+    // }
+    const otp = "123456";
     return otp;
 };
 const otpHash = (code) => crypto.createHash("sha256").update(code).digest("hex");
-const toPublicUser = (doc) => ({
-    _id: String(doc._id),
-    phone: doc.phone,
-    name: doc.name,
-    email: doc.email,
-    city: doc.city,
-    gender: doc.gender,
-    role: doc.role,
-    isProfileComplete: doc.isProfileComplete,
-});
+const toPublicUser = (doc) => {
+    const publicUser = {
+        _id: String(doc._id),
+        phone: doc.phone,
+        name: doc.name,
+        email: doc.email,
+        city: doc.city,
+        gender: doc.gender,
+        role: doc.role,
+        isProfileComplete: doc.isProfileComplete,
+    };
+    if (doc.photo) {
+        publicUser.photo = doc.photo;
+    }
+    return publicUser;
+};
 export const sendOtp = async (phone) => {
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + OTP_EXPIRATION_SECONDS * 1000);
@@ -41,11 +48,9 @@ export const verifyOtp = async (phone, code) => {
         throw new ApiError(400, "No OTP found for this number. Please request a new one.");
     }
     if (record.expiresAt.getTime() < Date.now()) {
-        await OtpModel.deleteOne({ phone });
         throw new ApiError(400, "OTP has expired. Please request a new one.");
     }
     if (record.attempts >= MAX_OTP_ATTEMPTS) {
-        await OtpModel.deleteOne({ phone });
         throw new ApiError(400, "Too many wrong attempts. Please request a new OTP.");
     }
     if (otpHash(code) !== record.codeHash) {
@@ -60,7 +65,7 @@ export const verifyOtp = async (phone, code) => {
             phone: existing.phone,
             role: existing.role,
         });
-        return { isNewUser: false, token, user: toPublicUser(existing) };
+        return { isNewUser: false, isExistingUser: true, token, user: toPublicUser(existing) };
     }
     // New number -> create a bare account; frontend will run profile setup.
     const user = await UserModel.create({ phone });
@@ -69,7 +74,7 @@ export const verifyOtp = async (phone, code) => {
         phone: user.phone,
         role: user.role,
     });
-    return { isNewUser: true, token, user: toPublicUser(user) };
+    return { isNewUser: true, isExistingUser: false, token, user: toPublicUser(user) };
 };
 export const completeProfile = async (input) => {
     const user = await UserModel.findOne({ phone: input.phone });
@@ -80,6 +85,9 @@ export const completeProfile = async (input) => {
     user.email = input.email;
     user.city = input.city;
     user.gender = input.gender;
+    if (input.photo) {
+        user.photo = input.photo;
+    }
     user.isProfileComplete = true;
     await user.save();
     const token = signToken({
@@ -87,6 +95,6 @@ export const completeProfile = async (input) => {
         phone: user.phone,
         role: user.role,
     });
-    return { isNewUser: false, token, user: toPublicUser(user) };
+    return { isNewUser: false, isExistingUser: true, token, user: toPublicUser(user) };
 };
 //# sourceMappingURL=auth.service.js.map

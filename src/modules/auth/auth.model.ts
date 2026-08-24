@@ -8,6 +8,7 @@ const userSchema = new Schema<User>(
         email: { type: String, trim: true, lowercase: true, default: "" },
         city: { type: String, trim: true, default: "" },
         gender: { type: String, enum: ["male", "female", "other", ""], default: "" },
+        photo: { type: String, default: null },
         role: { type: String, enum: Object.values(UserRole), default: UserRole.User },
         isProfileComplete: { type: Boolean, default: false },
     },

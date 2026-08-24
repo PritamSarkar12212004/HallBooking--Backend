@@ -35,6 +35,11 @@ const userSchema = new Schema<IUserDb>(
             default: null,
         },
 
+        photo: {
+            type: String,
+            default: null,
+        },
+
         role: {
             type: String,
             enum: ["CEO", "OFFICE", "STAFF"],
