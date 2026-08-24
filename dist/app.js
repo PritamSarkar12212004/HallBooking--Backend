@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import authRouter from "./modules/auth/auth.route.js";
+import { errorMiddleware, notFoundHandler, } from "./middlewares/error.middleware.js";
 const app = express();
 app.use(helmet());
 app.use(cors({
@@ -17,11 +19,8 @@ app.get("/health", (_req, res) => {
         message: "Server is healthy",
     });
 });
-app.use((_req, res) => {
-    res.status(404).json({
-        success: false,
-        message: "Route not found",
-    });
-});
+app.use("/api/v1/auth", authRouter);
+app.use(notFoundHandler);
+app.use(errorMiddleware);
 export default app;
 //# sourceMappingURL=app.js.map
