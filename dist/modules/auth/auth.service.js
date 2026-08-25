@@ -7,11 +7,6 @@ const OTP_EXPIRATION_SECONDS = Number(process.env.OTP_EXPIRATION_SECONDS) || 15;
 const OTP_LENGTH = 6;
 const MAX_OTP_ATTEMPTS = 5;
 const generateOtp = () => {
-    // const digits = "0123456789";
-    // let otp = "";
-    // for (let i = 0; i < OTP_LENGTH; i += 1) {
-    //     otp += digits[crypto.randomInt(digits.length) % digits.length];
-    // }
     const otp = "123456";
     return otp;
 };
@@ -32,6 +27,15 @@ const toPublicUser = (doc) => {
     }
     return publicUser;
 };
+/**
+ * Checks whether a user record has a fully completed profile.
+ *
+ * We rely on the actual profile fields (name, city, gender) rather than only
+ * the `isProfileComplete` flag, so that records created earlier as bare
+ * phone-only accounts (or any record with a stale flag) are correctly treated
+ * as incomplete until setup is finished.
+ */
+const isUserProfileComplete = (doc) => Boolean(doc.name && doc.city && doc.gender);
 export const sendOtp = async (phone) => {
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + OTP_EXPIRATION_SECONDS * 1000);
@@ -65,7 +69,15 @@ export const verifyOtp = async (phone, code) => {
             phone: existing.phone,
             role: existing.role,
         });
-        return { isNewUser: false, isExistingUser: true, token, user: toPublicUser(existing) };
+        // A user is considered "new" until their profile is complete. This
+        // matters for accounts that were created as a bare record (phone only)
+        // but whose profile setup was never finished.
+        return {
+            isNewUser: !isUserProfileComplete(existing),
+            isExistingUser: true,
+            token,
+            user: toPublicUser(existing),
+        };
     }
     // New number -> create a bare account; frontend will run profile setup.
     const user = await UserModel.create({ phone });

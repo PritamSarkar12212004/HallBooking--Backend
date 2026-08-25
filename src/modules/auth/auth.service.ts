@@ -16,11 +16,6 @@ const OTP_LENGTH = 6;
 const MAX_OTP_ATTEMPTS = 5;
 
 const generateOtp = (): string => {
-    // const digits = "0123456789";
-    // let otp = "";
-    // for (let i = 0; i < OTP_LENGTH; i += 1) {
-    //     otp += digits[crypto.randomInt(digits.length) % digits.length];
-    // }
     const otp = "123456"
     return otp;
 };
@@ -46,6 +41,9 @@ const toPublicUser = (doc: { _id: unknown } & UserShape): PublicUser => {
 
     return publicUser;
 };
+
+const isUserProfileComplete = (doc: UserShape): boolean =>
+    Boolean(doc.name && doc.city && doc.gender);
 
 export const sendOtp = async (phone: string): Promise<SendOtpResult> => {
     const code = generateOtp();
@@ -91,7 +89,16 @@ export const verifyOtp = async (phone: string, code: string): Promise<VerifyOtpR
             phone: existing.phone,
             role: existing.role,
         });
-        return { isNewUser: false, isExistingUser: true, token, user: toPublicUser(existing) };
+
+        // A user is considered "new" until their profile is complete. This
+        // matters for accounts that were created as a bare record (phone only)
+        // but whose profile setup was never finished.
+        return {
+            isNewUser: !isUserProfileComplete(existing),
+            isExistingUser: true,
+            token,
+            user: toPublicUser(existing),
+        };
     }
 
     // New number -> create a bare account; frontend will run profile setup.

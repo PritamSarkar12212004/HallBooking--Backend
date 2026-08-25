@@ -43,6 +43,10 @@ export const handleVerifyOtp = asyncHandler(
 
 export const handleCompleteProfile = asyncHandler(
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+        // NOTE: `phone` is intentionally NOT read from the request body. It
+        // always comes from the authenticated JWT token (`req.user.phone`),
+        // so the client never needs to send it again — only the other fields
+        // (name, email, city, gender, photo) are updated.
         const profile = validateProfile(req.body);
         const data = await completeProfileService({
             phone: req.user.phone,
