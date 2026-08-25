@@ -12,6 +12,7 @@ export type PaymentStatus =
     | "Pending";
 
 export type BookingStatus =
+    | "Draft"
     | "Pending"
     | "Office-Approved"
     | "Confirmed"
@@ -78,11 +79,12 @@ export interface ISchedule {
 
 
 export interface IFinancial {
-    hallRent: number;
-    securityDeposit: number;
-    totalAmount: number;
-    advancePaid: number;
-    balanceAmount: number;
+    hallRent?: number;
+    securityDeposit?: number;
+    totalAmount?: number;
+    advancePaid?: number;
+    balanceAmount?: number;
+    mode?: PaymentMode;
 }
 
 
@@ -138,28 +140,17 @@ export interface IBooking {
     arrangements: IArrangements;
 
     schedule: ISchedule;
-
     financial: IFinancial;
-
     payments: IPayment[];
-
     paymentStatus: PaymentStatus;
-
     signatures?: ISignatures;
-
     handover?: IHandover;
-
     status: BookingStatus;
-
     approvedBy?: IApprovedBy;
-
-    allocatedTeam: mongoose.Types.ObjectId[];
-
+    allocatedTeam: string[];
+    bookedByStaff: string;
     createdBy: mongoose.Types.ObjectId;
-
     createdByName: string;
-
     createdAt: Date;
-
     updatedAt: Date;
 }

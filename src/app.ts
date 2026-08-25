@@ -4,6 +4,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 
 import authRouter from "./modules/auth/auth.route.js";
+import bookingRouter from "./modules/bookings/booking.route.js";
 import {
     errorMiddleware,
     notFoundHandler,
@@ -32,6 +33,7 @@ app.get("/health", (_req, res) => {
     });
 });
 app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/bookings", bookingRouter);
 app.use(notFoundHandler);
 app.use(errorMiddleware);
 

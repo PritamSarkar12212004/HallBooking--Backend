@@ -13,64 +13,60 @@ const bookingSchema = new Schema<IBooking>(
         hall: {
             _id: {
                 type: Schema.Types.ObjectId,
-                required: true,
             },
             name: {
                 type: String,
-                required: true,
             },
             capacity: {
                 type: Number,
-                required: true,
             },
         },
 
         hallId: {
             type: Schema.Types.ObjectId,
             ref: "Hall",
-            index: true,
         },
 
         applicant: {
             name: {
                 type: String,
-                required: true,
+                default: "",
                 trim: true,
             },
-            organization: String,
+            organization: { type: String, default: "" },
             mobile: {
                 type: String,
-                required: true,
+                default: "",
                 trim: true,
             },
             address: {
                 type: String,
-                required: true,
+                default: "",
             },
-            email: String,
+            email: { type: String, default: "" },
 
             governmentId: {
                 type: {
                     type: String,
-                    required: true,
+                    default: "",
                 },
                 number: {
                     type: String,
-                    required: true,
+                    default: "",
                 },
-                photo: String,
+                photo: { type: String, default: "" },
             },
         },
 
         event: {
             type: {
                 type: String,
-                required: true,
+                default: "",
             },
             expectedAttendance: {
                 type: Number,
-                required: true,
-                min: 1,
+                default: 0,
+                min: 0,
             },
             timeSlots: {
                 type: [String],
@@ -82,7 +78,7 @@ const bookingSchema = new Schema<IBooking>(
             },
             name: {
                 type: String,
-                required: true,
+                default: "",
             },
         },
 
@@ -126,7 +122,7 @@ const bookingSchema = new Schema<IBooking>(
         financial: {
             hallRent: {
                 type: Number,
-                required: true,
+                default: 0,
                 min: 0,
             },
             securityDeposit: {
@@ -136,7 +132,7 @@ const bookingSchema = new Schema<IBooking>(
             },
             totalAmount: {
                 type: Number,
-                required: true,
+                default: 0,
                 min: 0,
             },
             advancePaid: {
@@ -163,7 +159,7 @@ const bookingSchema = new Schema<IBooking>(
                     enum: ["Cash", "UPI", "Cheque", "NEFT/RTGS"],
                     required: true,
                 },
-                transactionId: String,
+                transactionId: { type: String, default: "" },
                 receivedBy: {
                     type: Schema.Types.ObjectId,
                     ref: "User",
@@ -173,7 +169,7 @@ const bookingSchema = new Schema<IBooking>(
                     type: Date,
                     default: Date.now,
                 },
-                proof: String,
+                proof: { type: String, default: "" },
             },
         ],
 
@@ -184,10 +180,10 @@ const bookingSchema = new Schema<IBooking>(
         },
 
         signatures: {
-            applicantPhoto: String,
-            managerPhoto: String,
+            applicantPhoto: { type: String, default: "" },
+            managerPhoto: { type: String, default: "" },
             termsAcceptedAt: Date,
-            termsVersion: String,
+            termsVersion: { type: String, default: "" },
         },
 
         handover: {
@@ -211,13 +207,13 @@ const bookingSchema = new Schema<IBooking>(
         status: {
             type: String,
             enum: [
+                "Draft",
                 "Pending",
                 "Office-Approved",
                 "Confirmed",
                 "Cancelled",
             ],
-            default: "Pending",
-            index: true,
+            default: "Draft",
         },
 
         approvedBy: {
@@ -229,12 +225,16 @@ const bookingSchema = new Schema<IBooking>(
             note: String,
         },
 
-        allocatedTeam: [
-            {
-                type: Schema.Types.ObjectId,
-                ref: "User",
-            },
-        ],
+        allocatedTeam: {
+            type: [String],
+            default: [],
+        },
+
+        bookedByStaff: {
+            type: String,
+            default: "",
+            trim: true,
+        },
 
         createdBy: {
             type: Schema.Types.ObjectId,
