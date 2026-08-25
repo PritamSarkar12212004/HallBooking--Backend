@@ -155,3 +155,40 @@ export const completeProfile = async (input: CompleteProfileInput): Promise<Veri
 
     return { isNewUser: false, isExistingUser: true, token, user: toPublicUser(user) };
 };
+
+export interface UpdateProfileInput {
+    phone: string;
+    name?: string;
+    city?: string;
+    photo?: string;
+}
+
+/**
+ * Updates only the editable profile fields (name, city, photo).
+ *
+ * The user is looked up by the phone number taken from the authenticated JWT,
+ * so `phone`, `email`, `gender`, `role`, and `isProfileComplete` are
+ * intentionally NOT changeable and are never modified here.
+ */
+export const updateProfile = async (
+    input: UpdateProfileInput
+): Promise<PublicUser> => {
+    const user = await UserModel.findOne({ phone: input.phone });
+    if (!user) {
+        throw new ApiError(404, "User not found. Please verify your OTP first.");
+    }
+
+    if (input.name !== undefined) {
+        user.name = input.name;
+    }
+    if (input.city !== undefined) {
+        user.city = input.city;
+    }
+    if (input.photo !== undefined) {
+        user.photo = input.photo;
+    }
+
+    await user.save();
+
+    return toPublicUser(user);
+};

@@ -4,10 +4,12 @@ import {
     normalizePhone,
     validateOtpCode,
     validateProfile,
+    validateProfileUpdate,
 } from "./auth.validation.js";
 import {
     completeProfile as completeProfileService,
     sendOtp as sendOtpService,
+    updateProfile as updateProfileService,
     verifyOtp as verifyOtpService,
 } from "./auth.service.js";
 import { AuthenticatedRequest } from "../../middlewares/token.middleware.js";
@@ -43,10 +45,6 @@ export const handleVerifyOtp = asyncHandler(
 
 export const handleCompleteProfile = asyncHandler(
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-        // NOTE: `phone` is intentionally NOT read from the request body. It
-        // always comes from the authenticated JWT token (`req.user.phone`),
-        // so the client never needs to send it again — only the other fields
-        // (name, email, city, gender, photo) are updated.
         const profile = validateProfile(req.body);
         const data = await completeProfileService({
             phone: req.user.phone,
@@ -56,6 +54,26 @@ export const handleCompleteProfile = asyncHandler(
         res.status(200).json({
             success: true,
             message: "Profile completed successfully",
+            data,
+        });
+    }
+);
+
+export const handleUpdateProfile = asyncHandler(
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+        // Only editable fields (name, city, photo) are updated.
+        // `phone` comes from the JWT; phone, email, gender, role and
+        // isProfileComplete are intentionally NOT changeable through this
+        // endpoint.
+        const updatable = validateProfileUpdate(req.body);
+        const data = await updateProfileService({
+            phone: req.user.phone,
+            ...updatable,
+        });
+
+        res.status(200).json({
+            success: true,
+            message: "Profile updated successfully",
             data,
         });
     }

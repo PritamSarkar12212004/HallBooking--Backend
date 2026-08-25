@@ -38,4 +38,20 @@ export const validateProfile = (body) => {
     }
     return { name, email, city, gender, photo };
 };
+export const validateProfileUpdate = (body) => {
+    const name = typeof body?.name === "string" ? body.name.trim() : undefined;
+    const city = typeof body?.city === "string" ? body.city.trim() : undefined;
+    const photo = typeof body?.photo === "string" ? body.photo.trim() : undefined;
+    const result = {};
+    if (name !== undefined) {
+        result.name = name;
+    }
+    if (city !== undefined) {
+        result.city = city;
+    }
+    if (photo !== undefined) {
+        result.photo = photo;
+    }
+    return result;
+};
 //# sourceMappingURL=auth.validation.js.map

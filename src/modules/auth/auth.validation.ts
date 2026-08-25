@@ -55,3 +55,31 @@ export const validateProfile = (body: Record<string, unknown>): ProfileInput => 
 
     return { name, email, city, gender, photo };
 };
+
+export interface ProfileUpdateInput {
+    name?: string;
+    city?: string;
+    photo?: string;
+}
+
+export const validateProfileUpdate = (
+    body: Record<string, unknown>
+): ProfileUpdateInput => {
+    const name = typeof body?.name === "string" ? body.name.trim() : undefined;
+    const city = typeof body?.city === "string" ? body.city.trim() : undefined;
+    const photo =
+        typeof body?.photo === "string" ? body.photo.trim() : undefined;
+
+    const result: ProfileUpdateInput = {};
+    if (name !== undefined) {
+        result.name = name;
+    }
+    if (city !== undefined) {
+        result.city = city;
+    }
+    if (photo !== undefined) {
+        result.photo = photo;
+    }
+
+    return result;
+};
