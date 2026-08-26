@@ -26,6 +26,7 @@ app.use(
     })
 );
 app.use(morgan("dev"));
+// Optional dev-only delay/error simulator (see src/dev/devConfig.ts).
 app.get("/health", (_req, res) => {
     res.status(200).json({
         success: true,
@@ -36,5 +37,4 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/bookings", bookingRouter);
 app.use(notFoundHandler);
 app.use(errorMiddleware);
-
 export default app;

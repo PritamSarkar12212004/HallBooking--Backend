@@ -106,21 +106,17 @@ export const updateBookingSection = async (id, section, data, userId) => {
             const d = data;
             if (!booking.arrangements)
                 booking.arrangements = { kitchenRequired: false };
-            if (d.decoratorName !== undefined) {
-                booking.arrangements.decorator = { ...(booking.arrangements.decorator ?? {}), name: d.decoratorName };
-            }
-            if (d.decoratorContact !== undefined) {
-                booking.arrangements.decorator = { ...(booking.arrangements.decorator ?? {}), contact: d.decoratorContact };
-            }
-            if (d.decorationTiming !== undefined) {
-                booking.arrangements.decorator = { ...(booking.arrangements.decorator ?? {}), timing: d.decorationTiming };
-            }
-            if (d.catererName !== undefined) {
-                booking.arrangements.caterer = { ...(booking.arrangements.caterer ?? {}), name: d.catererName };
-            }
-            if (d.catererContact !== undefined) {
-                booking.arrangements.caterer = { ...(booking.arrangements.caterer ?? {}), contact: d.catererContact };
-            }
+            const decorator = booking.arrangements.decorator ?? {};
+            const caterer = booking.arrangements.caterer ?? {};
+            booking.arrangements.decorator = {
+                name: d.decoratorName ?? decorator.name,
+                contact: d.decoratorContact ?? decorator.contact,
+                timing: d.decorationTiming ?? decorator.timing,
+            };
+            booking.arrangements.caterer = {
+                name: d.catererName ?? caterer.name,
+                contact: d.catererContact ?? caterer.contact,
+            };
             if (d.kitchenRequired !== undefined) {
                 booking.arrangements.kitchenRequired = d.kitchenRequired === "Yes";
             }
@@ -169,7 +165,12 @@ export const updateBookingSection = async (id, section, data, userId) => {
             if (d.managerSignature !== undefined)
                 booking.signatures.managerPhoto = d.managerSignature;
             if (d.termsAccepted !== undefined) {
-                booking.signatures.termsAcceptedAt = d.termsAccepted ? new Date() : undefined;
+                if (d.termsAccepted) {
+                    booking.signatures.termsAcceptedAt = new Date();
+                }
+                else {
+                    delete booking.signatures.termsAcceptedAt;
+                }
             }
             break;
         }
@@ -182,8 +183,34 @@ export const updateBookingSection = async (id, section, data, userId) => {
     await booking.save();
     return booking;
 };
+// Dummy cartoon event image used when no real image exists yet.
+// Replace with your real CDN bucket URL when available.
+const DEFAULT_EVENT_IMAGE = "https://placehold.co/400x300/fdf2f8/be185d/png?text=%F0%9F%8E%AA+Event";
+const toStringId = (value) => typeof value === "string" ? value : String(value);
 export const listBookings = async () => {
-    return Booking.find().sort({ createdAt: -1 }).lean();
+    const bookings = await Booking.find()
+        .sort({ createdAt: -1 })
+        .lean()
+        .select({
+        _id: 1,
+        bookedByStaff: 1,
+        createdByName: 1,
+        "event.name": 1,
+        "hall.name": 1,
+        "schedule.startDate": 1,
+        "schedule.startTime": 1,
+    });
+    return bookings.map((b) => ({
+        id: toStringId(b._id),
+        eventImage: DEFAULT_EVENT_IMAGE,
+        eventName: b.event?.name || "Untitled Event",
+        hallName: b.hall?.name || "N/A",
+        startDate: b.schedule?.startDate
+            ? new Date(b.schedule.startDate).toISOString()
+            : "",
+        startTime: b.schedule?.startTime || "",
+        takenBy: b.bookedByStaff || b.createdByName || "N/A",
+    }));
 };
 export const getBookingById = async (id) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
