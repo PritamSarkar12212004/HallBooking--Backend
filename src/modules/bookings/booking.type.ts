@@ -80,6 +80,7 @@ export interface ISchedule {
 
 export interface IFinancial {
     hallRent?: number;
+    instrument?: number;
     securityDeposit?: number;
     totalAmount?: number;
     advancePaid?: number;

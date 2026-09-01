@@ -130,6 +130,11 @@ const bookingSchema = new Schema<IBooking>(
                 default: 0,
                 min: 0,
             },
+            instrument: {
+                type: Number,
+                default: 0,
+                min: 0,
+            },
             securityDeposit: {
                 type: Number,
                 default: 0,

@@ -162,14 +162,18 @@ export const updateBookingSection = async (
         case "payment": {
             const d = data as PaymentSectionInput;
             if (d.hallRent !== undefined) booking.financial.hallRent = d.hallRent;
+            if (d.instrument !== undefined) booking.financial.instrument = d.instrument;
             if (d.securityDeposit !== undefined) booking.financial.securityDeposit = d.securityDeposit;
             if (d.totalAmount !== undefined) booking.financial.totalAmount = d.totalAmount;
             if (d.advancePaid !== undefined) booking.financial.advancePaid = d.advancePaid;
-            if (d.balanceAmount !== undefined) {
-                booking.financial.balanceAmount = d.balanceAmount;
-            } else {
-                updateDocBalanceAmount(booking);
-            }
+
+            // Auto-calculate total = hallRent + instrument + securityDeposit
+            const hall = booking.financial.hallRent ?? 0;
+            const instr = booking.financial.instrument ?? 0;
+            const sec = booking.financial.securityDeposit ?? 0;
+            booking.financial.totalAmount = hall + instr + sec;
+
+            updateDocBalanceAmount(booking);
 
             const mode = (d.mode ?? booking.financial.mode ?? "Cash") as PaymentMode;
             booking.financial.mode = mode;

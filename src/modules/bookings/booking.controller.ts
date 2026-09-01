@@ -9,6 +9,10 @@ import {
     validatePaymentSection,
     validateDeclarationSection,
     BookingSection,
+    EVENT_TYPES,
+    HALL_REQUIREMENTS,
+    GOVERNMENT_ID_TYPES,
+    BOOKING_TERMS,
 } from "./booking.validation.js";
 import {
     createBookingDraft,
@@ -17,6 +21,29 @@ import {
     getBookingByNumber as getBookingByNumberService,
     listBookings as listBookingsService,
 } from "./booking.service.js";
+
+// Returns static config/options (event types, hall requirements, govt IDs)
+// so the frontend never hard-codes them — they come from the backend.
+export const handleBookingMeta = asyncHandler(
+    async (_req: Request, res: Response): Promise<void> => {
+        res.status(200).json({
+            success: true,
+            message: "Booking options fetched successfully",
+            data: {
+                eventTypes: EVENT_TYPES,
+                hallRequirements: HALL_REQUIREMENTS,
+                governmentIdTypes: GOVERNMENT_ID_TYPES,
+                terms: BOOKING_TERMS,
+                upi: {
+                    // Dummy UPI id + QR image (generated via an external QR API).
+                    id: "hallbooking@upi",
+                    name: "Hall Booking",
+                    qrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=upi://pay?pa=hallbooking%40upi%26pn=Hall%20Booking",
+                },
+            },
+        });
+    }
+);
 
 // Creates a draft booking from Step 1 (Hall Calendar) data.
 export const handleCreateBookingDraft = asyncHandler(
