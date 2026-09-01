@@ -6,6 +6,10 @@ const bookingSchema = new Schema({
         unique: true,
         trim: true,
     },
+    eventImage: {
+        type: String,
+        default: "",
+    },
     hall: {
         _id: {
             type: Schema.Types.ObjectId,

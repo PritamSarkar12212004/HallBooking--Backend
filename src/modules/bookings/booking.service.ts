@@ -47,6 +47,7 @@ export const createBookingDraft = async (
     const doc: Record<string, unknown> = {
         bookingNumber,
         event: { name: input.eventName },
+        eventImage: input.eventImage ?? "",
         schedule: {
             startDate,
             endDate,
@@ -173,19 +174,31 @@ export const updateBookingSection = async (
             const mode = (d.mode ?? booking.financial.mode ?? "Cash") as PaymentMode;
             booking.financial.mode = mode;
 
-            const transactionId = d.transactionNumber ?? booking.payments[0]?.transactionId ?? "";
-            const proof = d.paymentProofPhoto ?? booking.payments[0]?.proof ?? "";
+            const transactionId = d.transactionNumber ?? "";
+            const proof = d.paymentProofPhoto ?? "";
 
-            booking.payments = [
-                {
-                    amount: booking.financial.advancePaid ?? 0,
+            // Track each new payment received. Only append a record when the
+            // advance amount actually increased by this transaction.
+            const payments = booking.payments ?? [];
+            const previouslyReceived = payments.reduce(
+                (sum, p) => sum + (p?.amount ?? 0),
+                0
+            );
+            const newAdvance = booking.financial.advancePaid ?? 0;
+            const receivedNow = Math.max(0, newAdvance - previouslyReceived);
+
+            if (receivedNow > 0) {
+                payments.push({
+                    amount: receivedNow,
                     mode,
                     transactionId,
                     receivedBy: new mongoose.Types.ObjectId(userId),
                     receivedAt: new Date(),
                     proof,
-                },
-            ];
+                });
+            }
+
+            booking.payments = payments;
 
             const advance = booking.financial.advancePaid ?? 0;
             const balance = booking.financial.balanceAmount ?? 0;
@@ -244,6 +257,7 @@ export const listBookings = async (): Promise<BookingSummary[]> => {
             _id: 1,
             bookedByStaff: 1,
             createdByName: 1,
+            eventImage: 1,
             "event.name": 1,
             "hall.name": 1,
             "schedule.startDate": 1,
@@ -252,7 +266,7 @@ export const listBookings = async (): Promise<BookingSummary[]> => {
 
     return bookings.map((b) => ({
         id: toStringId((b as unknown as { _id: unknown })._id),
-        eventImage: DEFAULT_EVENT_IMAGE,
+        eventImage: b.eventImage || DEFAULT_EVENT_IMAGE,
         eventName: b.event?.name || "Untitled Event",
         hallName: b.hall?.name || "N/A",
         startDate: b.schedule?.startDate

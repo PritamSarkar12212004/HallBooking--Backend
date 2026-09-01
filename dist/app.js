@@ -4,7 +4,6 @@ import helmet from "helmet";
 import morgan from "morgan";
 import authRouter from "./modules/auth/auth.route.js";
 import bookingRouter from "./modules/bookings/booking.route.js";
-import { devDelayMiddleware } from "./dev/delay.middleware.js";
 import { errorMiddleware, notFoundHandler, } from "./middlewares/error.middleware.js";
 const app = express();
 app.use(helmet());
@@ -19,7 +18,6 @@ app.use(express.urlencoded({
 }));
 app.use(morgan("dev"));
 // Optional dev-only delay/error simulator (see src/dev/devConfig.ts).
-app.use(devDelayMiddleware);
 app.get("/health", (_req, res) => {
     res.status(200).json({
         success: true,

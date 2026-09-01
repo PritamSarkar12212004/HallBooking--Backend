@@ -129,6 +129,8 @@ export interface IApprovedBy {
 export interface IBooking {
     bookingNumber: string;
 
+    eventImage?: string;
+
     hall: IBookingHall;
 
     hallId?: mongoose.Types.ObjectId;

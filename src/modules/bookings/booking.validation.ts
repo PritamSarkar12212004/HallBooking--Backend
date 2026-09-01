@@ -102,6 +102,7 @@ export interface HallCalendarInput {
     endTime: string;
     eventName: string;
     bookedByStaff: string;
+    eventImage?: string;
     allocatedTeam: string[];
     hallId?: string;
 }
@@ -135,6 +136,13 @@ export const validateHallCalendar = (
 
     if (body.hallId !== undefined) {
         result.hallId = String(body.hallId);
+    }
+
+    if (body.eventImage !== undefined) {
+        const img = asString(body.eventImage);
+        if (img !== undefined) {
+            result.eventImage = img;
+        }
     }
 
     return result;

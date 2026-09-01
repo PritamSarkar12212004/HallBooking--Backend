@@ -98,6 +98,12 @@ export const validateHallCalendar = (body) => {
     if (body.hallId !== undefined) {
         result.hallId = String(body.hallId);
     }
+    if (body.eventImage !== undefined) {
+        const img = asString(body.eventImage);
+        if (img !== undefined) {
+            result.eventImage = img;
+        }
+    }
     return result;
 };
 export const validateEventSection = (body) => {

@@ -10,6 +10,11 @@ const bookingSchema = new Schema<IBooking>(
             trim: true,
         },
 
+        eventImage: {
+            type: String,
+            default: "",
+        },
+
         hall: {
             _id: {
                 type: Schema.Types.ObjectId,
