@@ -77,7 +77,14 @@ const updateDocBalanceAmount = (booking: IBooking): void => {
     const financial = booking.financial;
     const total = financial?.totalAmount ?? 0;
     const advance = financial?.advancePaid ?? 0;
-    financial.balanceAmount = Math.max(0, total - advance);
+    const hallRent = financial?.hallRent ?? 0;
+    const instrument = financial?.instrument ?? 0;
+    // Security deposit is refundable (returned to the applicant), so it is
+    // NOT part of the payable balance.
+    financial.balanceAmount = Math.max(
+        0,
+        total - advance - hallRent - instrument,
+    );
 };
 
 export type SectionData =
@@ -242,6 +249,10 @@ export interface BookingSummary {
     hallName: string;
     startDate: string;
     startTime: string;
+    endTime: string;
+    totalAmount: number;
+    balanceAmount: number;
+    applicantName: string;
     takenBy: string;
 }
 
@@ -261,11 +272,15 @@ export const listBookings = async (): Promise<BookingSummary[]> => {
             _id: 1,
             bookedByStaff: 1,
             createdByName: 1,
+            "applicant.name": 1,
             eventImage: 1,
             "event.name": 1,
             "hall.name": 1,
             "schedule.startDate": 1,
             "schedule.startTime": 1,
+            "schedule.endTime": 1,
+            "financial.totalAmount": 1,
+            "financial.balanceAmount": 1,
         });
 
     return bookings.map((b) => ({
@@ -277,6 +292,10 @@ export const listBookings = async (): Promise<BookingSummary[]> => {
             ? new Date(b.schedule.startDate).toISOString()
             : "",
         startTime: b.schedule?.startTime || "",
+        endTime: b.schedule?.endTime || "",
+        totalAmount: b.financial?.totalAmount ?? 0,
+        balanceAmount: b.financial?.balanceAmount ?? 0,
+        applicantName: b.applicant?.name || "N/A",
         takenBy: b.bookedByStaff || b.createdByName || "N/A",
     }));
 };
