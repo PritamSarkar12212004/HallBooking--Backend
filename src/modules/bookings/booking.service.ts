@@ -382,3 +382,141 @@ export const getBookingByNumber = async (
     }
     return booking;
 };
+
+export interface DashboardEventItem {
+    id: string;
+    hallName: string;
+    applicantName: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+    paymentStatus: string;
+}
+
+export interface DashboardData {
+    stats: {
+        todayEvents: number;
+        pendingPaymentsAmount: number;
+        weekBookings: number;
+        activeBookings: number;
+    };
+    weeklyChart: { value: number; label: string }[];
+    todayEvents: DashboardEventItem[];
+    upcomingEvents: DashboardEventItem[];
+}
+
+const startOfDay = (d: Date): Date => {
+    const c = new Date(d);
+    c.setHours(0, 0, 0, 0);
+    return c;
+};
+
+const endOfDay = (d: Date): Date => {
+    const c = new Date(d);
+    c.setHours(23, 59, 59, 999);
+    return c;
+};
+
+const toEventItem = (b: any): DashboardEventItem => ({
+    id: toStringId(b._id),
+    hallName: b.hall?.name || "N/A",
+    applicantName: b.applicant?.name || "N/A",
+    date: b.schedule?.startDate ? new Date(b.schedule.startDate).toISOString() : "",
+    startTime: b.schedule?.startTime || "",
+    endTime: b.schedule?.endTime || "",
+    status: b.status || "Draft",
+    paymentStatus: b.paymentStatus || "Pending",
+});
+
+const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Live dashboard analytics computed from real booking data.
+export const getDashboard = async (): Promise<DashboardData> => {
+    const now = new Date();
+    const todayStart = startOfDay(now);
+    const todayEnd = endOfDay(now);
+    const weekStart = startOfDay(new Date(now.getTime() - 6 * 86400000));
+    const weekEnd = endOfDay(now);
+
+    const [todayCount, pendingAgg, weekCount, activeCount] = await Promise.all([
+        Booking.countDocuments({
+            "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
+            status: { $ne: "Cancelled" },
+        }),
+        Booking.aggregate([
+            { $match: { status: { $ne: "Cancelled" } } },
+            { $group: { _id: null, total: { $sum: "$financial.balanceAmount" } } },
+        ]),
+        Booking.countDocuments({ createdAt: { $gte: weekStart, $lte: weekEnd } }),
+        Booking.countDocuments({ status: { $ne: "Cancelled" } }),
+    ]);
+
+    // Bookings created per day for the last 7 days (chart).
+    const chartRaw = await Booking.aggregate([
+        { $match: { createdAt: { $gte: weekStart } } },
+        {
+            $group: {
+                _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                count: { $sum: 1 },
+            },
+        },
+    ]);
+    const chartMap = new Map<string, number>(
+        chartRaw.map((r: any) => [r._id as string, r.count as number]),
+    );
+    const weeklyChart: { value: number; label: string }[] = [];
+    for (let i = 6; i >= 0; i--) {
+        const day = new Date(now.getTime() - i * 86400000);
+        const key = day.toISOString().slice(0, 10);
+        weeklyChart.push({
+            value: chartMap.get(key) ?? 0,
+            label: SHORT_DAYS[day.getDay()] ?? '',
+        });
+    }
+
+    const [todayDocs, upcomingDocs] = await Promise.all([
+        Booking.find({
+            "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
+        })
+            .sort({ "schedule.startTime": 1 })
+            .limit(5)
+            .select({
+                "hall.name": 1,
+                "applicant.name": 1,
+                "schedule.startDate": 1,
+                "schedule.startTime": 1,
+                "schedule.endTime": 1,
+                status: 1,
+                paymentStatus: 1,
+            })
+            .lean(),
+        Booking.find({
+            "schedule.startDate": { $gt: todayEnd, $lte: endOfDay(new Date(now.getTime() + 7 * 86400000)) },
+        })
+            .sort({ "schedule.startDate": 1 })
+            .limit(5)
+            .select({
+                "hall.name": 1,
+                "applicant.name": 1,
+                "schedule.startDate": 1,
+                "schedule.startTime": 1,
+                "schedule.endTime": 1,
+                status: 1,
+                paymentStatus: 1,
+            })
+            .lean(),
+    ]);
+
+    return {
+        stats: {
+            todayEvents: todayCount,
+            pendingPaymentsAmount: pendingAgg[0]?.total ?? 0,
+            weekBookings: weekCount,
+            activeBookings: activeCount,
+        },
+        weeklyChart,
+        todayEvents: todayDocs.map(toEventItem),
+        upcomingEvents: upcomingDocs.map(toEventItem),
+    };
+};

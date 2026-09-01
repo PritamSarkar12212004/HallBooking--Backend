@@ -20,7 +20,20 @@ import {
     getBookingById as getBookingByIdService,
     getBookingByNumber as getBookingByNumberService,
     listBookings as listBookingsService,
+    getDashboard as getDashboardService,
 } from "./booking.service.js";
+
+// Live dashboard analytics for the Home screen.
+export const handleDashboard = asyncHandler(
+    async (_req: Request, res: Response): Promise<void> => {
+        const dashboard = await getDashboardService();
+        res.status(200).json({
+            success: true,
+            message: "Dashboard data fetched successfully",
+            data: dashboard,
+        });
+    }
+);
 
 // Returns static config/options (event types, hall requirements, govt IDs)
 // so the frontend never hard-codes them — they come from the backend.
