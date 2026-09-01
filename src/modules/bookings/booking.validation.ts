@@ -301,6 +301,7 @@ export interface PaymentSectionInput {
     securityDeposit?: number;
     totalAmount?: number;
     advancePaid?: number;
+    finalPayment?: number;
     balanceAmount?: number;
     mode?: string;
     transactionNumber?: string | undefined;
@@ -328,6 +329,9 @@ export const validatePaymentSection = (
     }
     if (payBody.advancePaid !== undefined) {
         result.advancePaid = asNumber(payBody.advancePaid, "payment.advancePaid");
+    }
+    if (payBody.finalPayment !== undefined) {
+        result.finalPayment = asNumber(payBody.finalPayment, "payment.finalPayment");
     }
     if (payBody.balanceAmount !== undefined) {
         result.balanceAmount = asNumber(payBody.balanceAmount, "payment.balanceAmount");

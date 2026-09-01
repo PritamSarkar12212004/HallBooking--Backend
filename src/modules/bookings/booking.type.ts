@@ -84,8 +84,25 @@ export interface IFinancial {
     securityDeposit?: number;
     totalAmount?: number;
     advancePaid?: number;
+    finalPayment?: number;
     balanceAmount?: number;
     mode?: PaymentMode;
+}
+
+
+export interface IFinanceChange {
+    field: string;
+    from: number;
+    to: number;
+}
+
+export interface IFinanceHistoryEntry {
+    editedByName: string;
+    editedByMobile: string;
+    editedAt: Date;
+    changes: IFinanceChange[];
+    /** Resulting balance after this update (plain value, not a diff). */
+    balanceAfter?: number;
 }
 
 
@@ -145,6 +162,7 @@ export interface IBooking {
     schedule: ISchedule;
     financial: IFinancial;
     payments: IPayment[];
+    financeHistory?: IFinanceHistoryEntry[];
     paymentStatus: PaymentStatus;
     signatures?: ISignatures;
     handover?: IHandover;

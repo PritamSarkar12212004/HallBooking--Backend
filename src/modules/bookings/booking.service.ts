@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import Booking from "./booking.model.js";
+import User from "../user/user.model.js";
 import { ApiError } from "../../utils/api-error.js";
 import type { IBooking, ICaterer, IDecorator, PaymentMode } from "./booking.type.js";
 import type {
@@ -77,13 +78,13 @@ const updateDocBalanceAmount = (booking: IBooking): void => {
     const financial = booking.financial;
     const total = financial?.totalAmount ?? 0;
     const advance = financial?.advancePaid ?? 0;
-    const hallRent = financial?.hallRent ?? 0;
-    const instrument = financial?.instrument ?? 0;
-    // Security deposit is refundable (returned to the applicant), so it is
-    // NOT part of the payable balance.
+    const finalPayment = financial?.finalPayment ?? 0;
+    // Total already includes hallRent + instrument + securityDeposit, so they
+    // must NOT be subtracted again here. Balance reduces only by payments
+    // actually received (advance + final payment).
     financial.balanceAmount = Math.max(
         0,
-        total - advance - hallRent - instrument,
+        total - advance - finalPayment,
     );
 };
 
@@ -168,19 +169,61 @@ export const updateBookingSection = async (
         }
         case "payment": {
             const d = data as PaymentSectionInput;
+            // Capture previous values to build the audit diff.
+            const before: Record<string, number> = {
+                hallRent: booking.financial.hallRent ?? 0,
+                instrument: booking.financial.instrument ?? 0,
+                securityDeposit: booking.financial.securityDeposit ?? 0,
+                totalAmount: booking.financial.totalAmount ?? 0,
+                advancePaid: booking.financial.advancePaid ?? 0,
+                finalPayment: booking.financial.finalPayment ?? 0,
+            };
+
             if (d.hallRent !== undefined) booking.financial.hallRent = d.hallRent;
             if (d.instrument !== undefined) booking.financial.instrument = d.instrument;
             if (d.securityDeposit !== undefined) booking.financial.securityDeposit = d.securityDeposit;
             if (d.totalAmount !== undefined) booking.financial.totalAmount = d.totalAmount;
             if (d.advancePaid !== undefined) booking.financial.advancePaid = d.advancePaid;
+            if (d.finalPayment !== undefined) booking.financial.finalPayment = d.finalPayment;
 
-            // Auto-calculate total = hallRent + instrument + securityDeposit
-            const hall = booking.financial.hallRent ?? 0;
-            const instr = booking.financial.instrument ?? 0;
-            const sec = booking.financial.securityDeposit ?? 0;
-            booking.financial.totalAmount = hall + instr + sec;
+            // totalAmount is kept exactly as sent by the client (manual entry).
+            // It is NOT auto-recalculated from hallRent + instrument +
+            // securityDeposit — those are informational components and their
+            // sum does not always equal the agreed total (e.g. discounts or
+            // extra charges). Overriding it caused wrong balances.
 
             updateDocBalanceAmount(booking);
+
+            // Build audit entry: which numeric financial fields changed.
+            // balanceAmount is derived, so it is NOT tracked as a change —
+            // the Balance card only ever shows the current balance.
+            const after: Record<string, number> = {
+                hallRent: booking.financial.hallRent ?? 0,
+                instrument: booking.financial.instrument ?? 0,
+                securityDeposit: booking.financial.securityDeposit ?? 0,
+                totalAmount: booking.financial.totalAmount ?? 0,
+                advancePaid: booking.financial.advancePaid ?? 0,
+                finalPayment: booking.financial.finalPayment ?? 0,
+            };
+            const changes = Object.keys(after)
+                .filter((k) => (before[k] ?? 0) !== after[k])
+                .map((k) => ({
+                    field: k,
+                    from: Number(before[k] ?? 0),
+                    to: Number(after[k] ?? 0),
+                }));
+
+            if (changes.length > 0) {
+                const editor = await User.findById(userId).select("name phone");
+                if (!booking.financeHistory) booking.financeHistory = [];
+                booking.financeHistory.push({
+                    editedByName: editor?.name ?? "Unknown",
+                    editedByMobile: editor?.phone ?? "",
+                    editedAt: new Date(),
+                    changes,
+                    balanceAfter: booking.financial.balanceAmount ?? 0,
+                });
+            }
 
             const mode = (d.mode ?? booking.financial.mode ?? "Cash") as PaymentMode;
             booking.financial.mode = mode;
