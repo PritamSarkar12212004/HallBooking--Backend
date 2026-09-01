@@ -293,14 +293,19 @@ export interface BookingSummary {
     id: string;
     eventImage: string;
     eventName: string;
+    eventType: string;
     hallName: string;
     startDate: string;
     startTime: string;
     endTime: string;
     totalAmount: number;
     balanceAmount: number;
+    advancePaid: number;
     applicantName: string;
     takenBy: string;
+    paymentStatus: string;
+    createdAt: string;
+    status: string;
 }
 
 // Dummy cartoon event image used when no real image exists yet.
@@ -322,18 +327,24 @@ export const listBookings = async (): Promise<BookingSummary[]> => {
             "applicant.name": 1,
             eventImage: 1,
             "event.name": 1,
+            "event.type": 1,
             "hall.name": 1,
             "schedule.startDate": 1,
             "schedule.startTime": 1,
             "schedule.endTime": 1,
             "financial.totalAmount": 1,
             "financial.balanceAmount": 1,
+            "financial.advancePaid": 1,
+            paymentStatus: 1,
+            createdAt: 1,
+            status: 1,
         });
 
     return bookings.map((b) => ({
         id: toStringId((b as unknown as { _id: unknown })._id),
         eventImage: b.eventImage || DEFAULT_EVENT_IMAGE,
         eventName: b.event?.name || "Untitled Event",
+        eventType: b.event?.type || "Event",
         hallName: b.hall?.name || "N/A",
         startDate: b.schedule?.startDate
             ? new Date(b.schedule.startDate).toISOString()
@@ -342,8 +353,12 @@ export const listBookings = async (): Promise<BookingSummary[]> => {
         endTime: b.schedule?.endTime || "",
         totalAmount: b.financial?.totalAmount ?? 0,
         balanceAmount: b.financial?.balanceAmount ?? 0,
+        advancePaid: b.financial?.advancePaid ?? 0,
         applicantName: b.applicant?.name || "N/A",
         takenBy: b.bookedByStaff || b.createdByName || "N/A",
+        paymentStatus: b.paymentStatus || "Pending",
+        createdAt: b.createdAt ? new Date(b.createdAt).toISOString() : "",
+        status: b.status || "Draft",
     }));
 };
 
