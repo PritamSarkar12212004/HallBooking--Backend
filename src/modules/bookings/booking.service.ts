@@ -79,12 +79,13 @@ const updateDocBalanceAmount = (booking: IBooking): void => {
     const total = financial?.totalAmount ?? 0;
     const advance = financial?.advancePaid ?? 0;
     const finalPayment = financial?.finalPayment ?? 0;
-    // Total already includes hallRent + instrument + securityDeposit, so they
-    // must NOT be subtracted again here. Balance reduces only by payments
-    // actually received (advance + final payment).
+    const hallRent = financial?.hallRent ?? 0;
+    const instrument = financial?.instrument ?? 0;
+    // Balance = Total − Advance − Instrument − Hall Rent − Final Payment.
+    // Security deposit is a refundable hold, so it is NOT subtracted.
     financial.balanceAmount = Math.max(
         0,
-        total - advance - finalPayment,
+        total - advance - instrument - hallRent - finalPayment,
     );
 };
 
