@@ -10,7 +10,7 @@ import type {
     ApplicantSectionInput,
     ArrangementsSectionInput,
     PaymentSectionInput,
-    DeclarationSectionInput,
+    DeclarationSectionInput, 
 } from "./booking.validation.js";
 
 const generateBookingNumber = async (): Promise<string> => {
@@ -208,6 +208,9 @@ export const updateBookingSection = async (
             };
             const changes = Object.keys(after)
                 .filter((k) => (before[k] ?? 0) !== after[k])
+                // Security deposit is a refundable hold; changing it is not a
+                // payment event, so it must not be tracked in the history.
+                .filter((k) => k !== "securityDeposit")
                 .map((k) => ({
                     field: k,
                     from: Number(before[k] ?? 0),
