@@ -26,7 +26,6 @@ app.use(
     })
 );
 app.use(morgan("dev"));
-// Optional dev-only delay/error simulator (see src/dev/devConfig.ts).
 app.get("/health", (_req, res) => {
     res.status(200).json({
         success: true,

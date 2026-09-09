@@ -116,6 +116,16 @@ const bookingSchema = new Schema({
             default: 0,
             min: 0,
         },
+        instrument: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        finalPayment: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         securityDeposit: {
             type: Number,
             default: 0,
@@ -136,7 +146,26 @@ const bookingSchema = new Schema({
             default: 0,
             min: 0,
         },
+        mode: {
+            type: String,
+        },
     },
+    // Audit trail: who changed which financial field, when, old → new.
+    financeHistory: [
+        {
+            editedByName: { type: String, default: "" },
+            editedByMobile: { type: String, default: "" },
+            editedAt: { type: Date, default: Date.now },
+            changes: [
+                {
+                    field: { type: String },
+                    from: { type: Number },
+                    to: { type: Number },
+                },
+            ],
+            balanceAfter: { type: Number, default: 0 },
+        },
+    ],
     payments: [
         {
             amount: {

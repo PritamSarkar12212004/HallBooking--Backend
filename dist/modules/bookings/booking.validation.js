@@ -40,6 +40,17 @@ export const HALL_REQUIREMENTS = [
     "Green Room",
     "Registration Desk",
 ];
+export const BOOKING_TERMS = [
+    "The booking will be confirmed only after receipt of the prescribed advance payment.",
+    "Any damage to the hall, furniture, fixtures, or equipment shall be recovered from the security deposit or billed separately.",
+    "The balance amount must be paid before the commencement of the event.",
+    "The applicant is responsible for maintaining cleanliness and discipline during the event.",
+    "Loud music must comply with applicable local laws and permissible timings.",
+    "The management reserves the right to cancel the booking in case of violation of rules or misuse of the premises.",
+    "The applicant shall vacate the hall within the booked time. Additional charges may apply for exceeding the allotted time.",
+    "Smoking, illegal activities, and possession or consumption of prohibited substances inside the premises are strictly prohibited.",
+    "The management shall not be responsible for loss, theft, or damage to personal belongings.",
+];
 export const PAYMENT_MODES = ["Cash", "UPI", "Cheque", "NEFT/RTGS"];
 // "21 Aug 2026" -> Date
 const parseDisplayDate = (value) => {
@@ -114,18 +125,10 @@ export const validateEventSection = (body) => {
     }
     if (eventBody.type !== undefined) {
         const type = requiredString(eventBody.type, "event.type");
-        if (EVENT_TYPES.indexOf(type) === -1) {
-            throw new ApiError(400, "Invalid event.type");
-        }
         result.type = type;
     }
     if (eventBody.requirements !== undefined) {
         const requirements = asStringArray(eventBody.requirements, "event.requirements");
-        for (const req of requirements) {
-            if (HALL_REQUIREMENTS.indexOf(req) === -1) {
-                throw new ApiError(400, `Invalid requirement: ${req}`);
-            }
-        }
         result.requirements = requirements;
     }
     return result;
@@ -170,7 +173,9 @@ export const validateArrangementsSection = (body) => {
         result.decoratorName = requiredString(arrBody.decoratorName, "decoratorName");
     }
     if (arrBody.decoratorContact !== undefined) {
-        result.decoratorContact = requiredString(arrBody.decoratorContact, "decoratorContact");
+        const c = asString(arrBody.decoratorContact);
+        if (c)
+            result.decoratorContact = c;
     }
     if (arrBody.decorationTiming !== undefined) {
         result.decorationTiming = requiredString(arrBody.decorationTiming, "decorationTiming");
@@ -179,7 +184,9 @@ export const validateArrangementsSection = (body) => {
         result.catererName = requiredString(arrBody.catererName, "catererName");
     }
     if (arrBody.catererContact !== undefined) {
-        result.catererContact = requiredString(arrBody.catererContact, "catererContact");
+        const c = asString(arrBody.catererContact);
+        if (c)
+            result.catererContact = c;
     }
     if (arrBody.kitchenRequired !== undefined) {
         const kr = arrBody.kitchenRequired;
@@ -196,6 +203,9 @@ export const validatePaymentSection = (body) => {
     if (payBody.hallRent !== undefined) {
         result.hallRent = asNumber(payBody.hallRent, "payment.hallRent");
     }
+    if (payBody.instrument !== undefined) {
+        result.instrument = asNumber(payBody.instrument, "payment.instrument");
+    }
     if (payBody.securityDeposit !== undefined) {
         result.securityDeposit = asNumber(payBody.securityDeposit, "payment.securityDeposit");
     }
@@ -204,6 +214,9 @@ export const validatePaymentSection = (body) => {
     }
     if (payBody.advancePaid !== undefined) {
         result.advancePaid = asNumber(payBody.advancePaid, "payment.advancePaid");
+    }
+    if (payBody.finalPayment !== undefined) {
+        result.finalPayment = asNumber(payBody.finalPayment, "payment.finalPayment");
     }
     if (payBody.balanceAmount !== undefined) {
         result.balanceAmount = asNumber(payBody.balanceAmount, "payment.balanceAmount");

@@ -3,12 +3,13 @@ import { OtpModel, UserModel } from "./auth.model.js";
 import { ApiError } from "../../utils/api-error.js";
 import { signToken } from "../../utils/jwt.service.js";
 import { sendOtpSms } from "../../utils/sms.service.js";
-const OTP_EXPIRATION_SECONDS = Number(process.env.OTP_EXPIRATION_SECONDS) || 15;
+const OTP_EXPIRATION_SECONDS = Number(process.env.OTP_EXPIRATION_SECONDS) || 300;
 const OTP_LENGTH = 6;
 const MAX_OTP_ATTEMPTS = 5;
 const generateOtp = () => {
-    const otp = "123456";
-    return otp;
+    // Cryptographically secure 6-digit code (000000-999999), zero-padded.
+    const otp = crypto.randomInt(0, 10 ** OTP_LENGTH);
+    return String(otp).padStart(OTP_LENGTH, "0");
 };
 const otpHash = (code) => crypto.createHash("sha256").update(code).digest("hex");
 const toPublicUser = (doc) => {
@@ -61,9 +62,6 @@ export const verifyOtp = async (phone, code) => {
             phone: existing.phone,
             role: existing.role,
         });
-        // A user is considered "new" until their profile is complete. This
-        // matters for accounts that were created as a bare record (phone only)
-        // but whose profile setup was never finished.
         return {
             isNewUser: !isUserProfileComplete(existing),
             isExistingUser: true,

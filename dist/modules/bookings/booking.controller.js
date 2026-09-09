@@ -1,6 +1,34 @@
 import { asyncHandler } from "../../utils/async-handler.js";
-import { validateHallCalendar, validateApplicantSection, validateEventSection, validateArrangementsSection, validatePaymentSection, validateDeclarationSection, } from "./booking.validation.js";
-import { createBookingDraft, updateBookingSection as updateBookingSectionService, getBookingById as getBookingByIdService, getBookingByNumber as getBookingByNumberService, listBookings as listBookingsService, } from "./booking.service.js";
+import { validateHallCalendar, validateApplicantSection, validateEventSection, validateArrangementsSection, validatePaymentSection, validateDeclarationSection, EVENT_TYPES, HALL_REQUIREMENTS, GOVERNMENT_ID_TYPES, BOOKING_TERMS, } from "./booking.validation.js";
+import { createBookingDraft, updateBookingSection as updateBookingSectionService, getBookingById as getBookingByIdService, getBookingByNumber as getBookingByNumberService, listBookings as listBookingsService, getDashboard as getDashboardService, } from "./booking.service.js";
+export const handleDashboard = asyncHandler(async (_req, res) => {
+    const dashboard = await getDashboardService();
+    res.status(200).json({
+        success: true,
+        message: "Dashboard data fetched successfully",
+        data: dashboard,
+    });
+});
+// Returns static config/options (event types, hall requirements, govt IDs)
+// so the frontend never hard-codes them — they come from the backend.
+export const handleBookingMeta = asyncHandler(async (_req, res) => {
+    res.status(200).json({
+        success: true,
+        message: "Booking options fetched successfully",
+        data: {
+            eventTypes: EVENT_TYPES,
+            hallRequirements: HALL_REQUIREMENTS,
+            governmentIdTypes: GOVERNMENT_ID_TYPES,
+            terms: BOOKING_TERMS,
+            upi: {
+                // Dummy UPI id + QR image (generated via an external QR API).
+                id: "hallbooking@upi",
+                name: "Hall Booking",
+                qrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=upi://pay?pa=hallbooking%40upi%26pn=Hall%20Booking",
+            },
+        },
+    });
+});
 // Creates a draft booking from Step 1 (Hall Calendar) data.
 export const handleCreateBookingDraft = asyncHandler(async (req, res) => {
     const validated = validateHallCalendar(req.body);
@@ -53,12 +81,24 @@ export const handleUpdateBookingSection = asyncHandler(async (req, res) => {
         data: { booking },
     });
 });
-export const handleListBookings = asyncHandler(async (_req, res) => {
-    const bookings = await listBookingsService();
+export const handleListBookings = asyncHandler(async (req, res) => {
+    const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "10"), 10) || 10));
+    const { bookings, total } = await listBookingsService(page, pageSize);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
     res.status(200).json({
         success: true,
         message: "Bookings fetched successfully",
-        data: { bookings },
+        data: {
+            bookings,
+            pagination: {
+                page,
+                pageSize,
+                total,
+                totalPages,
+                hasMore: page < totalPages,
+            },
+        },
     });
 });
 export const handleGetBookingById = asyncHandler(async (req, res) => {

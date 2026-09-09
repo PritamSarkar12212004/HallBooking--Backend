@@ -27,4 +27,7 @@ const otpSchema = new Schema<Otp>(
     { timestamps: true }
 );
 
+// MongoDB TTL: expired OTP documents are auto-removed.
+otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
 export const OtpModel = mongoose.model<Otp>("Otp", otpSchema);
