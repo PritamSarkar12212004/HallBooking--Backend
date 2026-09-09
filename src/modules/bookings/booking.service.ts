@@ -308,6 +308,11 @@ export interface BookingSummary {
     status: string;
 }
 
+export interface PaginatedBookings {
+    bookings: BookingSummary[];
+    total: number;
+}
+
 // Dummy cartoon event image used when no real image exists yet.
 // Replace with your real CDN bucket URL when available.
 const DEFAULT_EVENT_IMAGE =
@@ -316,9 +321,19 @@ const DEFAULT_EVENT_IMAGE =
 const toStringId = (value: unknown): string =>
     typeof value === "string" ? value : String(value);
 
-export const listBookings = async (): Promise<BookingSummary[]> => {
+export const listBookings = async (
+    page = 1,
+    pageSize = 10
+): Promise<PaginatedBookings> => {
+    const skip = Math.max(0, (page - 1) * pageSize);
+
+    // Total count of matching documents (used for pagination metadata).
+    const total = await Booking.countDocuments();
+
     const bookings = await Booking.find()
         .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize)
         .lean()
         .select({
             _id: 1,
@@ -340,26 +355,29 @@ export const listBookings = async (): Promise<BookingSummary[]> => {
             status: 1,
         });
 
-    return bookings.map((b) => ({
-        id: toStringId((b as unknown as { _id: unknown })._id),
-        eventImage: b.eventImage || DEFAULT_EVENT_IMAGE,
-        eventName: b.event?.name || "Untitled Event",
-        eventType: b.event?.type || "Event",
-        hallName: b.hall?.name || "N/A",
-        startDate: b.schedule?.startDate
-            ? new Date(b.schedule.startDate).toISOString()
-            : "",
-        startTime: b.schedule?.startTime || "",
-        endTime: b.schedule?.endTime || "",
-        totalAmount: b.financial?.totalAmount ?? 0,
-        balanceAmount: b.financial?.balanceAmount ?? 0,
-        advancePaid: b.financial?.advancePaid ?? 0,
-        applicantName: b.applicant?.name || "N/A",
-        takenBy: b.bookedByStaff || b.createdByName || "N/A",
-        paymentStatus: b.paymentStatus || "Pending",
-        createdAt: b.createdAt ? new Date(b.createdAt).toISOString() : "",
-        status: b.status || "Draft",
-    }));
+    return {
+        bookings: bookings.map((b) => ({
+            id: toStringId((b as unknown as { _id: unknown })._id),
+            eventImage: b.eventImage || DEFAULT_EVENT_IMAGE,
+            eventName: b.event?.name || "Untitled Event",
+            eventType: b.event?.type || "Event",
+            hallName: b.hall?.name || "N/A",
+            startDate: b.schedule?.startDate
+                ? new Date(b.schedule.startDate).toISOString()
+                : "",
+            startTime: b.schedule?.startTime || "",
+            endTime: b.schedule?.endTime || "",
+            totalAmount: b.financial?.totalAmount ?? 0,
+            balanceAmount: b.financial?.balanceAmount ?? 0,
+            advancePaid: b.financial?.advancePaid ?? 0,
+            applicantName: b.applicant?.name || "N/A",
+            takenBy: b.bookedByStaff || b.createdByName || "N/A",
+            paymentStatus: b.paymentStatus || "Pending",
+            createdAt: b.createdAt ? new Date(b.createdAt).toISOString() : "",
+            status: b.status || "Draft",
+        })),
+        total,
+    };
 };
 
 export const getBookingById = async (id: string): Promise<IBooking> => {
@@ -385,25 +403,39 @@ export const getBookingByNumber = async (
 
 export interface DashboardEventItem {
     id: string;
+    eventName: string;
+    eventType: string;
     hallName: string;
     applicantName: string;
     date: string;
     startTime: string;
     endTime: string;
+    totalAmount: number;
     status: string;
     paymentStatus: string;
 }
 
+export interface DashboardStats {
+    todayEvents: number;
+    pendingPaymentsAmount: number;
+    weekBookings: number;
+    activeBookings: number;
+    totalRevenue: number;
+    collectedAmount: number;
+    totalBookings: number;
+    cancelledCount: number;
+    weeklyGrowth: number;
+}
+
 export interface DashboardData {
-    stats: {
-        todayEvents: number;
-        pendingPaymentsAmount: number;
-        weekBookings: number;
-        activeBookings: number;
-    };
+    stats: DashboardStats;
     weeklyChart: { value: number; label: string }[];
+    monthlyRevenue: { value: number; label: string }[];
+    paymentDistribution: { status: string; count: number }[];
+    hallStats: { hallName: string; bookings: number; revenue: number }[];
     todayEvents: DashboardEventItem[];
     upcomingEvents: DashboardEventItem[];
+    recentBookings: DashboardEventItem[];
 }
 
 const startOfDay = (d: Date): Date => {
@@ -420,16 +452,20 @@ const endOfDay = (d: Date): Date => {
 
 const toEventItem = (b: any): DashboardEventItem => ({
     id: toStringId(b._id),
+    eventName: b.event?.name || "Untitled Event",
+    eventType: b.event?.type || "Event",
     hallName: b.hall?.name || "N/A",
     applicantName: b.applicant?.name || "N/A",
     date: b.schedule?.startDate ? new Date(b.schedule.startDate).toISOString() : "",
     startTime: b.schedule?.startTime || "",
     endTime: b.schedule?.endTime || "",
+    totalAmount: b.financial?.totalAmount ?? 0,
     status: b.status || "Draft",
     paymentStatus: b.paymentStatus || "Pending",
 });
 
 const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Live dashboard analytics computed from real booking data.
 export const getDashboard = async (): Promise<DashboardData> => {
@@ -437,9 +473,21 @@ export const getDashboard = async (): Promise<DashboardData> => {
     const todayStart = startOfDay(now);
     const todayEnd = endOfDay(now);
     const weekStart = startOfDay(new Date(now.getTime() - 6 * 86400000));
+    const prevWeekStart = startOfDay(new Date(weekStart.getTime() - 7 * 86400000));
     const weekEnd = endOfDay(now);
 
-    const [todayCount, pendingAgg, weekCount, activeCount] = await Promise.all([
+    // ── Core stats + financial aggregates (all in parallel) ─────────────
+    const [
+        todayCount,
+        pendingAgg,
+        weekCount,
+        prevWeekCount,
+        activeCount,
+        totalCount,
+        revenueAgg,
+        collectedAgg,
+        cancelledCount,
+    ] = await Promise.all([
         Booking.countDocuments({
             "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
             status: { $ne: "Cancelled" },
@@ -449,10 +497,25 @@ export const getDashboard = async (): Promise<DashboardData> => {
             { $group: { _id: null, total: { $sum: "$financial.balanceAmount" } } },
         ]),
         Booking.countDocuments({ createdAt: { $gte: weekStart, $lte: weekEnd } }),
+        Booking.countDocuments({ createdAt: { $gte: prevWeekStart, $lte: weekStart } }),
         Booking.countDocuments({ status: { $ne: "Cancelled" } }),
+        Booking.countDocuments({}),
+        Booking.aggregate([
+            { $match: { status: { $ne: "Cancelled" } } },
+            { $group: { _id: null, total: { $sum: "$financial.totalAmount" } } },
+        ]),
+        Booking.aggregate([
+            { $match: { status: { $ne: "Cancelled" } } },
+            { $group: { _id: null, total: { $sum: "$financial.advancePaid" } } },
+        ]),
+        Booking.countDocuments({ status: "Cancelled" }),
     ]);
 
-    // Bookings created per day for the last 7 days (chart).
+    const weeklyGrowth = prevWeekCount === 0
+        ? (weekCount > 0 ? 100 : 0)
+        : Math.round(((weekCount - prevWeekCount) / prevWeekCount) * 100);
+
+    // Bookings created per day for the last 7 days (bar chart).
     const chartRaw = await Booking.aggregate([
         { $match: { createdAt: { $gte: weekStart } } },
         {
@@ -475,36 +538,94 @@ export const getDashboard = async (): Promise<DashboardData> => {
         });
     }
 
-    const [todayDocs, upcomingDocs] = await Promise.all([
+    // ── Monthly revenue trend (last 6 months) ──────────────────────────
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const monthlyRaw = await Booking.aggregate([
+        { $match: { status: { $ne: "Cancelled" }, createdAt: { $gte: monthStart } } },
+        {
+            $group: {
+                _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
+                total: { $sum: "$financial.totalAmount" },
+            },
+        },
+    ]);
+    const monthlyMap = new Map<string, number>(
+        monthlyRaw.map((r: any) => [r._id as string, r.total as number]),
+    );
+    const monthlyRevenue: { value: number; label: string }[] = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        monthlyRevenue.push({
+            value: monthlyMap.get(key) ?? 0,
+            label: SHORT_MONTHS[d.getMonth()] ?? '',
+        });
+    }
+
+    // ── Payment status distribution (non-cancelled) ────────────────────
+    const payRaw = await Booking.aggregate([
+        { $match: { status: { $ne: "Cancelled" } } },
+        { $group: { _id: "$paymentStatus", count: { $sum: 1 } } },
+    ]);
+    const payMap = new Map<string, number>(
+        payRaw.map((r: any) => [r._id as string, r.count as number]),
+    );
+    const paymentDistribution = ["Paid", "Partial", "Pending"].map((status) => ({
+        status,
+        count: payMap.get(status) ?? 0,
+    }));
+
+    // ── Hall demand (top 5 by bookings, then revenue) ──────────────────
+    const hallRaw = await Booking.aggregate([
+        { $match: { status: { $ne: "Cancelled" } } },
+        {
+            $group: {
+                _id: "$hall.name",
+                bookings: { $sum: 1 },
+                revenue: { $sum: "$financial.totalAmount" },
+            },
+        },
+        { $sort: { bookings: -1, revenue: -1 } },
+        { $limit: 5 },
+    ]);
+    const hallStats = hallRaw.map((r: any) => ({
+        hallName: (r._id as string) || "Unassigned",
+        bookings: r.bookings as number,
+        revenue: r.revenue as number,
+    }));
+
+    // ── Event lists (today / next 7 days) + recent bookings ────────────
+    const eventSelect = {
+        "event.name": 1,
+        "event.type": 1,
+        "hall.name": 1,
+        "applicant.name": 1,
+        "schedule.startDate": 1,
+        "schedule.startTime": 1,
+        "schedule.endTime": 1,
+        "financial.totalAmount": 1,
+        status: 1,
+        paymentStatus: 1,
+    };
+    const [todayDocs, upcomingDocs, recentDocs] = await Promise.all([
         Booking.find({
             "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
         })
             .sort({ "schedule.startTime": 1 })
             .limit(5)
-            .select({
-                "hall.name": 1,
-                "applicant.name": 1,
-                "schedule.startDate": 1,
-                "schedule.startTime": 1,
-                "schedule.endTime": 1,
-                status: 1,
-                paymentStatus: 1,
-            })
+            .select(eventSelect)
             .lean(),
         Booking.find({
             "schedule.startDate": { $gt: todayEnd, $lte: endOfDay(new Date(now.getTime() + 7 * 86400000)) },
         })
             .sort({ "schedule.startDate": 1 })
             .limit(5)
-            .select({
-                "hall.name": 1,
-                "applicant.name": 1,
-                "schedule.startDate": 1,
-                "schedule.startTime": 1,
-                "schedule.endTime": 1,
-                status: 1,
-                paymentStatus: 1,
-            })
+            .select(eventSelect)
+            .lean(),
+        Booking.find()
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .select(eventSelect)
             .lean(),
     ]);
 
@@ -514,9 +635,18 @@ export const getDashboard = async (): Promise<DashboardData> => {
             pendingPaymentsAmount: pendingAgg[0]?.total ?? 0,
             weekBookings: weekCount,
             activeBookings: activeCount,
+            totalRevenue: revenueAgg[0]?.total ?? 0,
+            collectedAmount: collectedAgg[0]?.total ?? 0,
+            totalBookings: totalCount,
+            cancelledCount,
+            weeklyGrowth,
         },
         weeklyChart,
+        monthlyRevenue,
+        paymentDistribution,
+        hallStats,
         todayEvents: todayDocs.map(toEventItem),
         upcomingEvents: upcomingDocs.map(toEventItem),
+        recentBookings: recentDocs.map(toEventItem),
     };
 };

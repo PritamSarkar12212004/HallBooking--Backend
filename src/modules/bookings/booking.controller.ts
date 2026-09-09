@@ -23,7 +23,6 @@ import {
     getDashboard as getDashboardService,
 } from "./booking.service.js";
 
-// Live dashboard analytics for the Home screen.
 export const handleDashboard = asyncHandler(
     async (_req: Request, res: Response): Promise<void> => {
         const dashboard = await getDashboardService();
@@ -127,13 +126,32 @@ export const handleUpdateBookingSection = asyncHandler(
 );
 
 export const handleListBookings = asyncHandler(
-    async (_req: Request, res: Response): Promise<void> => {
-        const bookings = await listBookingsService();
+    async (req: Request, res: Response): Promise<void> => {
+        const page = Math.max(
+            1,
+            parseInt(String(req.query.page ?? "1"), 10) || 1
+        );
+        const pageSize = Math.min(
+            100,
+            Math.max(1, parseInt(String(req.query.pageSize ?? "10"), 10) || 10)
+        );
+
+        const { bookings, total } = await listBookingsService(page, pageSize);
+        const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
 
         res.status(200).json({
             success: true,
             message: "Bookings fetched successfully",
-            data: { bookings },
+            data: {
+                bookings,
+                pagination: {
+                    page,
+                    pageSize,
+                    total,
+                    totalPages,
+                    hasMore: page < totalPages,
+                },
+            },
         });
     }
 );
