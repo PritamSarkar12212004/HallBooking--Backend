@@ -89,7 +89,11 @@ export const sendSms = async (
                     Authorization: `Bearer ${token}`,
                     "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ to, template: templateId, variables }),
+                body: JSON.stringify({
+                    to, template: templateId, variables, media: {
+                        url: "https://res.cloudinary.com/dftt4ow6q/image/upload/v1789112613/fmxa9igwfibetwuc5pr8.jpg"
+                    }
+                }),
                 signal: controller.signal,
             });
         } finally {
@@ -140,12 +144,6 @@ export const sendSms = async (
     }
 };
 
-/**
- * Send the OTP through the messaging API.
- *
- * The OTP code is passed in the template variable (default key "code") —
- * the platform substitutes it into the registered template.
- */
 export const sendOtpSms = async ({
     phone,
     code,
