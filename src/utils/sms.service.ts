@@ -77,27 +77,59 @@ export const sendSms = async (
 
         logger.info("Sending message via messaging API", { to, templateId });
 
-        // Apply a 30s timeout so a dead gateway cannot hang the request.
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
+        // Gateway (Render free tier) can hang for 30s+ on cold start — try
+        // up to 2 times with a configurable timeout so a dead gateway cannot
+        // hang the request forever.
+        const attemptTimeout =
+            Number(process.env.SMS_TIMEOUT_MS?.trim()) || 30000;
+        const maxAttempts = 2;
 
-        let response: Response;
-        try {
-            response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    to, template: templateId, variables, media: {
-                        url: "https://res.cloudinary.com/dftt4ow6q/image/upload/v1789112613/fmxa9igwfibetwuc5pr8.jpg"
-                    }
-                }),
-                signal: controller.signal,
-            });
-        } finally {
-            clearTimeout(timeout);
+        let response: Response | null = null;
+        let lastError: unknown = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const controller = new AbortController();
+            const timeout = setTimeout(
+                () => controller.abort(),
+                attemptTimeout
+            );
+            try {
+                response = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        to, template: templateId, variables, media: {
+                            url: "https://res.cloudinary.com/dftt4ow6q/image/upload/v1789112613/fmxa9igwfibetwuc5pr8.jpg"
+                        }
+                    }),
+                    signal: controller.signal,
+                });
+                lastError = null;
+                break;
+            } catch (error) {
+                lastError = error;
+                logger.warn("sendSms attempt failed, retrying", {
+                    attempt,
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : String(error),
+                });
+                if (attempt < maxAttempts) {
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, 1000)
+                    );
+                }
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        if (!response) {
+            throw lastError;
         }
 
         const statusCode = response.status;

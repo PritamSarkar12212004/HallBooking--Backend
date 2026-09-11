@@ -298,6 +298,8 @@ export interface UnitItemInput {
     label: string;
     quantity: number;
     perUnit: number;
+    /** Meter reading — recorded only, excluded from payment calculations. */
+    currentUnit: number;
     amount: number;
     paid: boolean;
 }
@@ -336,10 +338,12 @@ const asUnitItems = (value: unknown): UnitItemInput[] => {
         const quantity = asNumber(item.quantity ?? 0, `payment.units[${index}].quantity`);
         const perUnit = asNumber(item.perUnit ?? 0, `payment.units[${index}].perUnit`);
         // Amount is always derived server-side — never trusted from the client.
+        // currentUnit (meter reading) is recorded but never charged.
         return {
             label,
             quantity,
             perUnit,
+            currentUnit: asNumber(item.currentUnit ?? 0, `payment.units[${index}].currentUnit`),
             amount: quantity * perUnit,
             paid: item.paid === true,
         };

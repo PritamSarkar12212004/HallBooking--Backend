@@ -182,7 +182,6 @@ export const updateBookingSection = async (
         }
         case "payment": {
             const d = data as PaymentSectionInput;
-            // Capture previous aggregate values to build the audit diff.
             const before = {
                 securityDeposit: booking.financial.securityDeposit ?? 0,
                 totalAmount: booking.financial.totalAmount ?? 0,
@@ -197,12 +196,14 @@ export const updateBookingSection = async (
                     paid: c.paid,
                 }));
             }
-            // Units: amount is derived from quantity × perUnit.
+            // Units: amount is derived from quantity × perUnit. currentUnit
+            // (meter reading) is stored for reference only — never charged.
             if (d.units !== undefined) {
                 booking.financial.units = d.units.map((u) => ({
                     label: u.label,
                     quantity: u.quantity,
                     perUnit: u.perUnit,
+                    currentUnit: u.currentUnit ?? 0,
                     amount: u.quantity * u.perUnit,
                     paid: u.paid,
                 }));
@@ -480,8 +481,19 @@ const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "S
 // Live dashboard analytics computed from real booking data.
 export const getDashboard = async (): Promise<DashboardData> => {
     const now = new Date();
-    const todayStart = startOfDay(now);
-    const todayEnd = endOfDay(now);
+    // Client sends date-only strings ("YYYY-MM-DD") which MongoDB casts to UTC
+    // midnight — so day boundaries must be computed on the IST calendar date,
+    // otherwise early-morning IST hours land on the previous UTC day.
+    const IST_OFFSET_MS = 5.5 * 3600000;
+    const istShifted = new Date(now.getTime() + IST_OFFSET_MS);
+    const istDayStartUtc = Date.UTC(
+        istShifted.getUTCFullYear(),
+        istShifted.getUTCMonth(),
+        istShifted.getUTCDate(),
+    );
+    const todayStart = new Date(istDayStartUtc - IST_OFFSET_MS);
+    const todayEnd = new Date(istDayStartUtc + 86400000 - 1 - IST_OFFSET_MS);
+    const upcomingEnd = new Date(istDayStartUtc + 7 * 86400000 - 1 - IST_OFFSET_MS);
     const weekStart = startOfDay(new Date(now.getTime() - 6 * 86400000));
     const prevWeekStart = startOfDay(new Date(weekStart.getTime() - 7 * 86400000));
     const weekEnd = endOfDay(now);
@@ -500,7 +512,8 @@ export const getDashboard = async (): Promise<DashboardData> => {
         cancelledCount,
     ] = await Promise.all([
         Booking.countDocuments({
-            "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
+            "schedule.startDate": { $lte: todayEnd },
+            "schedule.endDate": { $gte: todayStart },
             status: { $ne: "Cancelled" },
         }),
         Booking.aggregate([
@@ -646,14 +659,15 @@ export const getDashboard = async (): Promise<DashboardData> => {
     };
     const [todayDocs, upcomingDocs, recentDocs] = await Promise.all([
         Booking.find({
-            "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
+            "schedule.startDate": { $lte: todayEnd },
+            "schedule.endDate": { $gte: todayStart },
         })
             .sort({ "schedule.startTime": 1 })
             .limit(5)
             .select(eventSelect)
             .lean(),
         Booking.find({
-            "schedule.startDate": { $gt: todayEnd, $lte: endOfDay(new Date(now.getTime() + 7 * 86400000)) },
+            "schedule.startDate": { $gt: todayEnd, $lte: upcomingEnd },
         })
             .sort({ "schedule.startDate": 1 })
             .limit(5)

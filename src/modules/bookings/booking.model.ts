@@ -147,6 +147,8 @@ const bookingSchema = new Schema<IBooking>(
                             label: { type: String, required: true, trim: true },
                             quantity: { type: Number, default: 0, min: 0 },
                             perUnit: { type: Number, default: 0, min: 0 },
+                            // Meter reading — recorded only, never charged.
+                            currentUnit: { type: Number, default: 0, min: 0 },
                             amount: { type: Number, default: 0, min: 0 },
                             paid: { type: Boolean, default: false },
                         },
