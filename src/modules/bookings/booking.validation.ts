@@ -67,7 +67,6 @@ export const BOOKING_TERMS = [
 
 export const PAYMENT_MODES = ["Cash", "UPI", "Cheque", "NEFT/RTGS"] as const;
 
-// "21 Aug 2026" -> Date
 const parseDisplayDate = (value: string): Date => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
@@ -105,7 +104,6 @@ const asStringArray = (value: unknown, label: string): string[] => {
     return value.map((item) => String(item).trim()).filter(Boolean);
 };
 
-// ────────────── Step 1: Hall Calendar (POST draft) ──────────────
 export interface HallCalendarInput {
     bookingType: string;
     startDate: string;
@@ -115,7 +113,6 @@ export interface HallCalendarInput {
     eventName: string;
     bookedByStaff: string;
     eventImage?: string;
-    allocatedTeam: string[];
     hallId?: string;
 }
 
@@ -133,7 +130,6 @@ export const validateHallCalendar = (
     const endTime = requiredString(body.endTime, "endTime");
     const eventName = requiredString(body.eventName, "eventName");
     const bookedByStaff = requiredString(body.bookedByStaff, "bookedByStaff");
-    const allocatedTeam = asStringArray(body.allocatedTeam, "allocatedTeam");
 
     const result: HallCalendarInput = {
         bookingType,
@@ -143,7 +139,6 @@ export const validateHallCalendar = (
         endTime,
         eventName,
         bookedByStaff,
-        allocatedTeam,
     };
 
     if (body.hallId !== undefined) {
@@ -160,7 +155,6 @@ export const validateHallCalendar = (
     return result;
 };
 
-// ────────────── Step 2: Event ──────────────
 export interface EventSectionInput {
     expectedAttendance?: number;
     type?: string;
@@ -197,7 +191,6 @@ export const validateEventSection = (
     return result;
 };
 
-// ────────────── Step 1b: Applicant ──────────────
 export interface ApplicantSectionInput {
     name?: string;
     organization?: string | undefined;
@@ -248,7 +241,6 @@ export const validateApplicantSection = (
     return result;
 };
 
-// ────────────── Step 3: Arrangements ──────────────
 export interface ArrangementsSectionInput {
     decoratorName?: string;
     decoratorContact?: string;
@@ -266,7 +258,8 @@ export const validateArrangementsSection = (
     const result: ArrangementsSectionInput = {};
 
     if (arrBody.decoratorName !== undefined) {
-        result.decoratorName = requiredString(arrBody.decoratorName, "decoratorName");
+        const dn = asString(arrBody.decoratorName);
+        if (dn) result.decoratorName = dn;
     }
     if (arrBody.decoratorContact !== undefined) {
         const c = asString(arrBody.decoratorContact);
@@ -276,7 +269,8 @@ export const validateArrangementsSection = (
         result.decorationTiming = requiredString(arrBody.decorationTiming, "decorationTiming");
     }
     if (arrBody.catererName !== undefined) {
-        result.catererName = requiredString(arrBody.catererName, "catererName");
+        const cn = asString(arrBody.catererName);
+        if (cn) result.catererName = cn;
     }
     if (arrBody.catererContact !== undefined) {
         const c = asString(arrBody.catererContact);
@@ -294,19 +288,63 @@ export const validateArrangementsSection = (
     return result;
 };
 
-// ────────────── Step 5: Payment ──────────────
+export interface ChargeItemInput {
+    label: string;
+    amount: number;
+    paid: number;
+}
+
+export interface UnitItemInput {
+    label: string;
+    quantity: number;
+    perUnit: number;
+    amount: number;
+    paid: boolean;
+}
+
 export interface PaymentSectionInput {
-    hallRent?: number;
-    instrument?: number;
+    charges?: ChargeItemInput[];
+    units?: UnitItemInput[];
     securityDeposit?: number;
-    totalAmount?: number;
-    advancePaid?: number;
-    finalPayment?: number;
-    balanceAmount?: number;
     mode?: string;
     transactionNumber?: string | undefined;
     paymentProofPhoto?: string | undefined;
 }
+
+const asChargeItems = (value: unknown): ChargeItemInput[] => {
+    if (!Array.isArray(value)) {
+        throw new ApiError(400, "payment.charges must be an array");
+    }
+    return value.map((raw, index) => {
+        const item = (raw ?? {}) as Record<string, unknown>;
+        const label = requiredString(item.label, `payment.charges[${index}].label`);
+        return {
+            label,
+            amount: asNumber(item.amount ?? 0, `payment.charges[${index}].amount`),
+            paid: asNumber(item.paid ?? 0, `payment.charges[${index}].paid`),
+        };
+    });
+};
+
+const asUnitItems = (value: unknown): UnitItemInput[] => {
+    if (!Array.isArray(value)) {
+        throw new ApiError(400, "payment.units must be an array");
+    }
+    return value.map((raw, index) => {
+        const item = (raw ?? {}) as Record<string, unknown>;
+        const label = requiredString(item.label, `payment.units[${index}].label`);
+        const quantity = asNumber(item.quantity ?? 0, `payment.units[${index}].quantity`);
+        const perUnit = asNumber(item.perUnit ?? 0, `payment.units[${index}].perUnit`);
+        // Amount is always derived server-side — never trusted from the client.
+        return {
+            label,
+            quantity,
+            perUnit,
+            amount: quantity * perUnit,
+            paid: item.paid === true,
+        };
+    });
+};
 
 export const validatePaymentSection = (
     body: Record<string, unknown>
@@ -315,26 +353,14 @@ export const validatePaymentSection = (
 
     const result: PaymentSectionInput = {};
 
-    if (payBody.hallRent !== undefined) {
-        result.hallRent = asNumber(payBody.hallRent, "payment.hallRent");
+    if (payBody.charges !== undefined) {
+        result.charges = asChargeItems(payBody.charges);
     }
-    if (payBody.instrument !== undefined) {
-        result.instrument = asNumber(payBody.instrument, "payment.instrument");
+    if (payBody.units !== undefined) {
+        result.units = asUnitItems(payBody.units);
     }
     if (payBody.securityDeposit !== undefined) {
         result.securityDeposit = asNumber(payBody.securityDeposit, "payment.securityDeposit");
-    }
-    if (payBody.totalAmount !== undefined) {
-        result.totalAmount = asNumber(payBody.totalAmount, "payment.totalAmount");
-    }
-    if (payBody.advancePaid !== undefined) {
-        result.advancePaid = asNumber(payBody.advancePaid, "payment.advancePaid");
-    }
-    if (payBody.finalPayment !== undefined) {
-        result.finalPayment = asNumber(payBody.finalPayment, "payment.finalPayment");
-    }
-    if (payBody.balanceAmount !== undefined) {
-        result.balanceAmount = asNumber(payBody.balanceAmount, "payment.balanceAmount");
     }
 
     if (payBody.mode !== undefined) {
@@ -355,7 +381,6 @@ export const validatePaymentSection = (
     return result;
 };
 
-// ────────────── Step 6: Declaration ──────────────
 export interface DeclarationSectionInput {
     applicantSignature?: string;
     managerSignature?: string;

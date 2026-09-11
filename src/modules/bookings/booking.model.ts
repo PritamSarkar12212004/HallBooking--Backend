@@ -125,26 +125,43 @@ const bookingSchema = new Schema<IBooking>(
         },
 
         financial: {
-            hallRent: {
-                type: Number,
-                default: 0,
-                min: 0,
+            // Actual amount breakdown. Total is derived from these.
+            charges: {
+                type: [
+                    new Schema(
+                        {
+                            label: { type: String, required: true, trim: true },
+                            amount: { type: Number, default: 0, min: 0 },
+                            paid: { type: Number, default: 0, min: 0 },
+                        },
+                        { _id: false }
+                    ),
+                ],
+                default: [],
             },
-            instrument: {
-                type: Number,
-                default: 0,
-                min: 0,
+            // Unit / consumption breakdown (water, light, AC, custom).
+            units: {
+                type: [
+                    new Schema(
+                        {
+                            label: { type: String, required: true, trim: true },
+                            quantity: { type: Number, default: 0, min: 0 },
+                            perUnit: { type: Number, default: 0, min: 0 },
+                            amount: { type: Number, default: 0, min: 0 },
+                            paid: { type: Boolean, default: false },
+                        },
+                        { _id: false }
+                    ),
+                ],
+                default: [],
             },
-            finalPayment: {
-                type: Number,
-                default: 0,
-                min: 0,
-            },
+            // Refundable — excluded from total/balance calculations.
             securityDeposit: {
                 type: Number,
                 default: 0,
                 min: 0,
             },
+            // Derived caches (recomputed on every payment update).
             totalAmount: {
                 type: Number,
                 default: 0,
@@ -258,11 +275,6 @@ const bookingSchema = new Schema<IBooking>(
             },
             at: Date,
             note: String,
-        },
-
-        allocatedTeam: {
-            type: [String],
-            default: [],
         },
 
         bookedByStaff: {

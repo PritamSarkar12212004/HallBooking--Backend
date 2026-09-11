@@ -78,13 +78,43 @@ export interface ISchedule {
 }
 
 
+export interface IChargeItem {
+    /** Charge head title, e.g. "Hall Rent", "Decoration" or any custom title. */
+    label: string;
+    /** Actual amount charged for this head. */
+    amount: number;
+    /** How much the customer has paid against this head. */
+    paid: number;
+}
+
+export interface IUnitItem {
+    /** Unit head title, e.g. "Water", "Light" or any custom title. */
+    label: string;
+    /** Number of units consumed. */
+    quantity: number;
+    /** Rate charged per unit. */
+    perUnit: number;
+    /** Derived = quantity × perUnit. */
+    amount: number;
+    /** Whether this unit charge has been paid. */
+    paid: boolean;
+}
+
 export interface IFinancial {
-    hallRent?: number;
-    instrument?: number;
+    /** Actual amount breakdown — part of the total. */
+    charges: IChargeItem[];
+    /** Unit / consumption charges (water, light, AC, custom) — part of the total. */
+    units?: IUnitItem[];
+    /**
+     * Refundable security deposit. It is intentionally NOT part of the
+     * charges/total/balance calculation because it is returned to the customer.
+     */
     securityDeposit?: number;
+    /** Derived cache = sum(charges.amount) + sum(units.amount). */
     totalAmount?: number;
+    /** Derived cache = sum(charges.paid). */
     advancePaid?: number;
-    finalPayment?: number;
+    /** Derived cache = max(0, totalAmount - advancePaid). */
     balanceAmount?: number;
     mode?: PaymentMode;
 }
@@ -168,7 +198,6 @@ export interface IBooking {
     handover?: IHandover;
     status: BookingStatus;
     approvedBy?: IApprovedBy;
-    allocatedTeam: string[];
     bookedByStaff: string;
     createdBy: mongoose.Types.ObjectId;
     createdByName: string;

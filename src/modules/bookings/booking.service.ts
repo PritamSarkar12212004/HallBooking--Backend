@@ -56,13 +56,13 @@ export const createBookingDraft = async (
             endTime: input.endTime,
         },
         bookedByStaff: input.bookedByStaff,
-        allocatedTeam: input.allocatedTeam,
         applicant: {},
         arrangements: {},
         financial: {},
         signatures: {},
         payments: [],
-        status: "Draft",
+        // The booking is only created on the final step, so it is confirmed.
+        status: "Confirmed",
         createdBy: new mongoose.Types.ObjectId(input.createdBy),
         createdByName: input.createdByName,
     };
@@ -74,19 +74,33 @@ export const createBookingDraft = async (
     return Booking.create(doc);
 };
 
-const updateDocBalanceAmount = (booking: IBooking): void => {
+// Recompute the derived caches from the charge + unit breakdown.
+//   totalAmount   = sum(charges.amount) + sum(units.amount)
+//   advancePaid   = sum(charges.paid)
+//   balanceAmount = max(0, totalAmount - advancePaid)
+// Security deposit is a refundable hold, so it is NOT part of any of these.
+const recomputeFinancialTotals = (booking: IBooking): void => {
     const financial = booking.financial;
-    const total = financial?.totalAmount ?? 0;
-    const advance = financial?.advancePaid ?? 0;
-    const finalPayment = financial?.finalPayment ?? 0;
-    const hallRent = financial?.hallRent ?? 0;
-    const instrument = financial?.instrument ?? 0;
-    // Balance = Total − Advance − Instrument − Hall Rent − Final Payment.
-    // Security deposit is a refundable hold, so it is NOT subtracted.
-    financial.balanceAmount = Math.max(
+    const charges = Array.isArray(financial?.charges) ? financial.charges : [];
+    const units = Array.isArray(financial?.units) ? financial.units : [];
+    const chargesTotal = charges.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+    const unitsTotal = units.reduce(
+        (sum, u) => sum + (Number(u.quantity) || 0) * (Number(u.perUnit) || 0),
         0,
-        total - advance - instrument - hallRent - finalPayment,
     );
+    const unitsPaid = units.reduce(
+        (sum, u) =>
+            u.paid
+                ? sum + (Number(u.quantity) || 0) * (Number(u.perUnit) || 0)
+                : sum,
+        0,
+    );
+    const total = chargesTotal + unitsTotal;
+    const paid =
+        charges.reduce((sum, c) => sum + (Number(c.paid) || 0), 0) + unitsPaid;
+    financial.totalAmount = total;
+    financial.advancePaid = paid;
+    financial.balanceAmount = Math.max(0, total - paid);
 };
 
 export type SectionData =
@@ -107,7 +121,10 @@ const isBookingComplete = (booking: IBooking): boolean => {
     );
     const eventOk = Boolean(e?.type && e?.expectedAttendance && e?.name);
     const financialOk = Boolean(
-        f && (f.totalAmount ?? 0) > 0 && (f.advancePaid ?? 0) > 0 && f.mode
+        f &&
+            (f.totalAmount ?? 0) > 0 &&
+            (f.advancePaid ?? 0) > 0 &&
+            f.mode
     );
     const signatureOk = Boolean(s?.applicantPhoto && s?.managerPhoto);
 
@@ -170,47 +187,49 @@ export const updateBookingSection = async (
         }
         case "payment": {
             const d = data as PaymentSectionInput;
-            // Capture previous values to build the audit diff.
-            const before: Record<string, number> = {
-                hallRent: booking.financial.hallRent ?? 0,
-                instrument: booking.financial.instrument ?? 0,
+            // Capture previous aggregate values to build the audit diff.
+            const before = {
                 securityDeposit: booking.financial.securityDeposit ?? 0,
                 totalAmount: booking.financial.totalAmount ?? 0,
                 advancePaid: booking.financial.advancePaid ?? 0,
-                finalPayment: booking.financial.finalPayment ?? 0,
             };
 
-            if (d.hallRent !== undefined) booking.financial.hallRent = d.hallRent;
-            if (d.instrument !== undefined) booking.financial.instrument = d.instrument;
-            if (d.securityDeposit !== undefined) booking.financial.securityDeposit = d.securityDeposit;
-            if (d.totalAmount !== undefined) booking.financial.totalAmount = d.totalAmount;
-            if (d.advancePaid !== undefined) booking.financial.advancePaid = d.advancePaid;
-            if (d.finalPayment !== undefined) booking.financial.finalPayment = d.finalPayment;
+            // Section 1: replace the actual amount breakdown.
+            if (d.charges !== undefined) {
+                booking.financial.charges = d.charges.map((c) => ({
+                    label: c.label,
+                    amount: c.amount,
+                    paid: c.paid,
+                }));
+            }
+            // Units: amount is derived from quantity × perUnit.
+            if (d.units !== undefined) {
+                booking.financial.units = d.units.map((u) => ({
+                    label: u.label,
+                    quantity: u.quantity,
+                    perUnit: u.perUnit,
+                    amount: u.quantity * u.perUnit,
+                    paid: u.paid,
+                }));
+            }
+            if (d.securityDeposit !== undefined) {
+                booking.financial.securityDeposit = d.securityDeposit;
+            }
 
-            // totalAmount is kept exactly as sent by the client (manual entry).
-            // It is NOT auto-recalculated from hallRent + instrument +
-            // securityDeposit — those are informational components and their
-            // sum does not always equal the agreed total (e.g. discounts or
-            // extra charges). Overriding it caused wrong balances.
+            // totalAmount / advancePaid / balanceAmount are derived from the
+            // charges array — never trusted from the client.
+            recomputeFinancialTotals(booking);
 
-            updateDocBalanceAmount(booking);
-
-            // Build audit entry: which numeric financial fields changed.
+            // Build audit entry: which aggregate financial values changed.
             // balanceAmount is derived, so it is NOT tracked as a change —
             // the Balance card only ever shows the current balance.
-            const after: Record<string, number> = {
-                hallRent: booking.financial.hallRent ?? 0,
-                instrument: booking.financial.instrument ?? 0,
+            const after = {
                 securityDeposit: booking.financial.securityDeposit ?? 0,
                 totalAmount: booking.financial.totalAmount ?? 0,
                 advancePaid: booking.financial.advancePaid ?? 0,
-                finalPayment: booking.financial.finalPayment ?? 0,
             };
-            const changes = Object.keys(after)
-                .filter((k) => (before[k] ?? 0) !== after[k])
-                // Security deposit is a refundable hold; changing it is not a
-                // payment event, so it must not be tracked in the history.
-                .filter((k) => k !== "securityDeposit")
+            const changes = (["totalAmount", "advancePaid"] as const)
+                .filter((k) => before[k] !== after[k])
                 .map((k) => ({
                     field: k,
                     from: Number(before[k] ?? 0),
@@ -282,7 +301,7 @@ export const updateBookingSection = async (
     }
 
     if (booking.status === "Draft" && isBookingComplete(booking)) {
-        booking.status = "Pending";
+        booking.status = "Confirmed";
     }
 
     await booking.save();
@@ -413,6 +432,8 @@ export interface DashboardEventItem {
     totalAmount: number;
     status: string;
     paymentStatus: string;
+    bookedBy: string;
+    expenses: number;
 }
 
 export interface DashboardStats {
@@ -425,12 +446,15 @@ export interface DashboardStats {
     totalBookings: number;
     cancelledCount: number;
     weeklyGrowth: number;
+    totalExpenses: number;
 }
 
 export interface DashboardData {
     stats: DashboardStats;
     weeklyChart: { value: number; label: string }[];
     monthlyRevenue: { value: number; label: string }[];
+    weeklyExpenses: { value: number; label: string }[];
+    monthlyExpenses: { value: number; label: string }[];
     paymentDistribution: { status: string; count: number }[];
     hallStats: { hallName: string; bookings: number; revenue: number }[];
     todayEvents: DashboardEventItem[];
@@ -450,6 +474,19 @@ const endOfDay = (d: Date): Date => {
     return c;
 };
 
+// Total expense of a booking = billed charges + billed consumption units.
+const sumBookingExpenses = (b: any): number => {
+    const charges = (b?.financial?.charges ?? []).reduce(
+        (s: number, c: any) => s + (c.amount || 0),
+        0,
+    );
+    const units = (b?.financial?.units ?? []).reduce(
+        (s: number, u: any) => s + (u.amount || 0),
+        0,
+    );
+    return charges + units;
+};
+
 const toEventItem = (b: any): DashboardEventItem => ({
     id: toStringId(b._id),
     eventName: b.event?.name || "Untitled Event",
@@ -462,6 +499,8 @@ const toEventItem = (b: any): DashboardEventItem => ({
     totalAmount: b.financial?.totalAmount ?? 0,
     status: b.status || "Draft",
     paymentStatus: b.paymentStatus || "Pending",
+    bookedBy: b.bookedByStaff || b.createdByName || "N/A",
+    expenses: sumBookingExpenses(b),
 });
 
 const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -475,6 +514,7 @@ export const getDashboard = async (): Promise<DashboardData> => {
     const weekStart = startOfDay(new Date(now.getTime() - 6 * 86400000));
     const prevWeekStart = startOfDay(new Date(weekStart.getTime() - 7 * 86400000));
     const weekEnd = endOfDay(now);
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
     // ── Core stats + financial aggregates (all in parallel) ─────────────
     const [
@@ -487,6 +527,8 @@ export const getDashboard = async (): Promise<DashboardData> => {
         revenueAgg,
         collectedAgg,
         cancelledCount,
+        expensesAgg,
+        expensesMonthAgg,
     ] = await Promise.all([
         Booking.countDocuments({
             "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
@@ -500,38 +542,88 @@ export const getDashboard = async (): Promise<DashboardData> => {
         Booking.countDocuments({ createdAt: { $gte: prevWeekStart, $lte: weekStart } }),
         Booking.countDocuments({ status: { $ne: "Cancelled" } }),
         Booking.countDocuments({}),
+        // Revenue = what the customer has actually paid, not the billed total.
+        // Pending/due amounts are tracked separately via pendingPaymentsAmount.
         Booking.aggregate([
             { $match: { status: { $ne: "Cancelled" } } },
-            { $group: { _id: null, total: { $sum: "$financial.totalAmount" } } },
+            { $group: { _id: null, total: { $sum: "$financial.advancePaid" } } },
         ]),
         Booking.aggregate([
             { $match: { status: { $ne: "Cancelled" } } },
             { $group: { _id: null, total: { $sum: "$financial.advancePaid" } } },
         ]),
         Booking.countDocuments({ status: "Cancelled" }),
+        // ── Total expenses (all time, non-cancelled) ──────────────────
+        Booking.aggregate([
+            { $match: { status: { $ne: "Cancelled" } } },
+            {
+                $group: {
+                    _id: null,
+                    total: {
+                        $sum: {
+                            $add: [
+                                { $ifNull: [{ $sum: { $ifNull: ["$financial.charges.amount", []] } }, 0] },
+                                { $ifNull: [{ $sum: { $ifNull: ["$financial.units.amount", []] } }, 0] },
+                            ],
+                        },
+                    },
+                },
+            },
+        ]),
+        // ── Expenses in the last 6 months (grouped by month) ──────────
+        Booking.aggregate([
+            { $match: { status: { $ne: "Cancelled" }, createdAt: { $gte: monthStart } } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
+                    total: {
+                        $sum: {
+                            $add: [
+                                { $ifNull: [{ $sum: { $ifNull: ["$financial.charges.amount", []] } }, 0] },
+                                { $ifNull: [{ $sum: { $ifNull: ["$financial.units.amount", []] } }, 0] },
+                            ],
+                        },
+                    },
+                },
+            },
+        ]),
     ]);
+
+    const expensesTotal = expensesAgg[0]?.total ?? 0;
+
+    // NOTE: revenueAgg == collectedAgg intentionally — revenue reflects only
+    // the amount actually received from customers.
 
     const weeklyGrowth = prevWeekCount === 0
         ? (weekCount > 0 ? 100 : 0)
         : Math.round(((weekCount - prevWeekCount) / prevWeekCount) * 100);
 
     // Bookings created per day for the last 7 days (bar chart).
-    const chartRaw = await Booking.aggregate([
-        { $match: { createdAt: { $gte: weekStart } } },
-        {
-            $group: {
-                _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-                count: { $sum: 1 },
-            },
-        },
-    ]);
-    const chartMap = new Map<string, number>(
-        chartRaw.map((r: any) => [r._id as string, r.count as number]),
-    );
+    // Bucketed in server-local time (not UTC) so the day keys line up with the
+    // labels shown on the client — this was the source of the empty/incorrect
+    // weekly chart previously.
+    const localDateKey = (d: Date): string =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+            d.getDate(),
+        ).padStart(2, '0')}`;
+
+    const weekDocs = await Booking.find({ createdAt: { $gte: weekStart } })
+        .select({ createdAt: 1, "financial.charges": 1, "financial.units": 1 })
+        .lean();
+
+    const chartMap = new Map<string, number>();
+    const weekExpMap = new Map<string, number>();
+    for (const doc of weekDocs) {
+        if (!doc.createdAt) continue;
+        const key = localDateKey(new Date(doc.createdAt));
+        chartMap.set(key, (chartMap.get(key) ?? 0) + 1);
+        weekExpMap.set(key, (weekExpMap.get(key) ?? 0) + sumBookingExpenses(doc));
+    }
+
     const weeklyChart: { value: number; label: string }[] = [];
     for (let i = 6; i >= 0; i--) {
         const day = new Date(now.getTime() - i * 86400000);
-        const key = day.toISOString().slice(0, 10);
+        const key = localDateKey(day);
         weeklyChart.push({
             value: chartMap.get(key) ?? 0,
             label: SHORT_DAYS[day.getDay()] ?? '',
@@ -539,13 +631,12 @@ export const getDashboard = async (): Promise<DashboardData> => {
     }
 
     // ── Monthly revenue trend (last 6 months) ──────────────────────────
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     const monthlyRaw = await Booking.aggregate([
         { $match: { status: { $ne: "Cancelled" }, createdAt: { $gte: monthStart } } },
         {
             $group: {
                 _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
-                total: { $sum: "$financial.totalAmount" },
+                total: { $sum: "$financial.advancePaid" },
             },
         },
     ]);
@@ -558,6 +649,31 @@ export const getDashboard = async (): Promise<DashboardData> => {
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
         monthlyRevenue.push({
             value: monthlyMap.get(key) ?? 0,
+            label: SHORT_MONTHS[d.getMonth()] ?? '',
+        });
+    }
+
+    // ── Weekly expenses (last 7 days, per createdAt) ──────────────────
+    const weeklyExpenses: { value: number; label: string }[] = [];
+    for (let i = 6; i >= 0; i--) {
+        const day = new Date(now.getTime() - i * 86400000);
+        const key = localDateKey(day);
+        weeklyExpenses.push({
+            value: weekExpMap.get(key) ?? 0,
+            label: SHORT_DAYS[day.getDay()] ?? '',
+        });
+    }
+
+    // ── Monthly expenses (last 6 months) ─────────────────────────────
+    const monthExpMap = new Map<string, number>(
+        expensesMonthAgg.map((r: any) => [r._id as string, r.total as number]),
+    );
+    const monthlyExpenses: { value: number; label: string }[] = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        monthlyExpenses.push({
+            value: monthExpMap.get(key) ?? 0,
             label: SHORT_MONTHS[d.getMonth()] ?? '',
         });
     }
@@ -582,7 +698,7 @@ export const getDashboard = async (): Promise<DashboardData> => {
             $group: {
                 _id: "$hall.name",
                 bookings: { $sum: 1 },
-                revenue: { $sum: "$financial.totalAmount" },
+                revenue: { $sum: "$financial.advancePaid" },
             },
         },
         { $sort: { bookings: -1, revenue: -1 } },
@@ -604,6 +720,10 @@ export const getDashboard = async (): Promise<DashboardData> => {
         "schedule.startTime": 1,
         "schedule.endTime": 1,
         "financial.totalAmount": 1,
+        "financial.charges": 1,
+        "financial.units": 1,
+        bookedByStaff: 1,
+        createdByName: 1,
         status: 1,
         paymentStatus: 1,
     };
@@ -640,9 +760,12 @@ export const getDashboard = async (): Promise<DashboardData> => {
             totalBookings: totalCount,
             cancelledCount,
             weeklyGrowth,
+            totalExpenses: expensesTotal,
         },
         weeklyChart,
         monthlyRevenue,
+        weeklyExpenses,
+        monthlyExpenses,
         paymentDistribution,
         hallStats,
         todayEvents: todayDocs.map(toEventItem),
