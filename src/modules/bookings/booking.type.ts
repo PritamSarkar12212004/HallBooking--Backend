@@ -110,6 +110,12 @@ export interface IFinancial {
      * charges/total/balance calculation because it is returned to the customer.
      */
     securityDeposit?: number;
+    /** Whether the deposit was returned to the customer at event end. */
+    securityDepositReturned?: boolean;
+    /** Amount deducted from the deposit (₹) at return time. */
+    securityDepositDeducted?: number;
+    /** Reason for the deduction (e.g. damage, extra consumption). */
+    securityDepositReason?: string;
     /** Derived cache = sum(charges.amount) + sum(units.amount). */
     totalAmount?: number;
     /** Derived cache = sum(charges.paid). */

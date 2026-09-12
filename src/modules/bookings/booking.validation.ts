@@ -308,6 +308,10 @@ export interface PaymentSectionInput {
     charges?: ChargeItemInput[];
     units?: UnitItemInput[];
     securityDeposit?: number;
+    /** Deposit return flags set on the Finalize Event screen. */
+    depositReturned?: boolean;
+    depositDeducted?: number;
+    depositReason?: string | undefined;
     mode?: string;
     transactionNumber?: string | undefined;
     paymentProofPhoto?: string | undefined;
@@ -365,6 +369,15 @@ export const validatePaymentSection = (
     }
     if (payBody.securityDeposit !== undefined) {
         result.securityDeposit = asNumber(payBody.securityDeposit, "payment.securityDeposit");
+    }
+    if (payBody.depositReturned !== undefined) {
+        result.depositReturned = payBody.depositReturned === true;
+    }
+    if (payBody.depositDeducted !== undefined) {
+        result.depositDeducted = asNumber(payBody.depositDeducted, "payment.depositDeducted");
+    }
+    if (payBody.depositReason !== undefined) {
+        result.depositReason = asString(payBody.depositReason);
     }
 
     if (payBody.mode !== undefined) {

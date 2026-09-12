@@ -163,6 +163,23 @@ const bookingSchema = new Schema<IBooking>(
                 default: 0,
                 min: 0,
             },
+            // Deposit return tracking (updated at event end via Finalize Event).
+            securityDepositReturned: {
+                type: Boolean,
+                default: false,
+            },
+            // Amount deducted from the deposit (₹) at return time.
+            securityDepositDeducted: {
+                type: Number,
+                default: 0,
+                min: 0,
+            },
+            // Reason for the deduction (damage, extra consumption, etc.).
+            securityDepositReason: {
+                type: String,
+                default: "",
+                trim: true,
+            },
             // Derived caches (recomputed on every payment update).
             totalAmount: {
                 type: Number,

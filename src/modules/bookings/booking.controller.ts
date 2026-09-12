@@ -34,8 +34,6 @@ export const handleDashboard = asyncHandler(
     }
 );
 
-// Returns static config/options (event types, hall requirements, govt IDs)
-// so the frontend never hard-codes them — they come from the backend.
 export const handleBookingMeta = asyncHandler(
     async (_req: Request, res: Response): Promise<void> => {
         res.status(200).json({

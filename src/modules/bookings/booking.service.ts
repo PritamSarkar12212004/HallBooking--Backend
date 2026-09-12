@@ -83,16 +83,14 @@ const recomputeFinancialTotals = (booking: IBooking): void => {
         (sum, u) => sum + (Number(u.quantity) || 0) * (Number(u.perUnit) || 0),
         0,
     );
+    const total = chargesTotal + unitsTotal;
+    // Paid = charge payments + any units explicitly marked paid at event end.
     const unitsPaid = units.reduce(
         (sum, u) =>
-            u.paid
-                ? sum + (Number(u.quantity) || 0) * (Number(u.perUnit) || 0)
-                : sum,
+            sum + (u.paid ? (Number(u.quantity) || 0) * (Number(u.perUnit) || 0) : 0),
         0,
     );
-    const total = chargesTotal + unitsTotal;
-    const paid =
-        charges.reduce((sum, c) => sum + (Number(c.paid) || 0), 0) + unitsPaid;
+    const paid = charges.reduce((sum, c) => sum + (Number(c.paid) || 0), 0) + unitsPaid;
     financial.totalAmount = total;
     financial.advancePaid = paid;
     financial.balanceAmount = Math.max(0, total - paid);
@@ -198,6 +196,8 @@ export const updateBookingSection = async (
             }
             // Units: amount is derived from quantity × perUnit. currentUnit
             // (meter reading) is stored for reference only — never charged.
+            // paid is honored so the final settlement at event end can mark
+            // the calculated units as paid in the same request.
             if (d.units !== undefined) {
                 booking.financial.units = d.units.map((u) => ({
                     label: u.label,
@@ -205,11 +205,20 @@ export const updateBookingSection = async (
                     perUnit: u.perUnit,
                     currentUnit: u.currentUnit ?? 0,
                     amount: u.quantity * u.perUnit,
-                    paid: u.paid,
+                    paid: u.paid === true,
                 }));
             }
             if (d.securityDeposit !== undefined) {
                 booking.financial.securityDeposit = d.securityDeposit;
+            }
+            if (d.depositReturned !== undefined) {
+                booking.financial.securityDepositReturned = d.depositReturned;
+            }
+            if (d.depositDeducted !== undefined) {
+                booking.financial.securityDepositDeducted = Math.max(0, d.depositDeducted);
+            }
+            if (d.depositReason !== undefined) {
+                booking.financial.securityDepositReason = d.depositReason;
             }
 
             recomputeFinancialTotals(booking);
@@ -410,6 +419,7 @@ export const getBookingByNumber = async (
 
 export interface DashboardEventItem {
     id: string;
+    eventImage: string;
     eventName: string;
     eventType: string;
     hallName: string;
@@ -461,6 +471,7 @@ const endOfDay = (d: Date): Date => {
 
 const toEventItem = (b: any): DashboardEventItem => ({
     id: toStringId(b._id),
+    eventImage: b.eventImage || DEFAULT_EVENT_IMAGE,
     eventName: b.event?.name || "Untitled Event",
     eventType: b.event?.type || "Event",
     hallName: b.hall?.name || "N/A",
@@ -656,6 +667,7 @@ export const getDashboard = async (): Promise<DashboardData> => {
         createdByName: 1,
         status: 1,
         paymentStatus: 1,
+        eventImage: 1,
     };
     const [todayDocs, upcomingDocs, recentDocs] = await Promise.all([
         Booking.find({
