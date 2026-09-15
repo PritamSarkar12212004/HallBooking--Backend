@@ -13,6 +13,13 @@ export interface SendSmsData {
     senderId?: string;
     templateId?: string;
     message?: string;
+    /**
+     * Template placeholders. Booking confirmations need many (customer name,
+     * hall, amounts…), while OTP uses the single legacy `message` value.
+     */
+    variables?: Record<string, string>;
+    /** Header media of the template. Falls back to DEFAULT_MEDIA_URL. */
+    mediaUrl?: string;
 }
 
 export interface SendOtpSmsParams {
@@ -24,6 +31,15 @@ const DEFAULT_API_URL =
     "https://whatsapp-services-8t87.onrender.com/api/messaging/messages/send";
 
 const DEFAULT_TEMPLATE_ID = "6aa397f544cd4f83cc61db41";
+
+// Booking-confirmation template ("For any assistance, please contact us at …").
+// Overridable per-environment via SMS_BOOKING_TEMPLATE_ID.
+export const DEFAULT_BOOKING_TEMPLATE_ID = "6aa95e384b27a4cbc3c8057e";
+
+// The gateway rejects a template with a missing/relative media URL, so a
+// public image is always attached unless the caller supplies its own.
+export const DEFAULT_MEDIA_URL =
+    "https://res.cloudinary.com/dftt4ow6q/image/upload/v1789112613/fmxa9igwfibetwuc5pr8.jpg";
 
 const DEFAULT_API_TOKEN =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3cG51bWJlciI6Ijc3OTY0MTk3OTIiLCJ1c2VySWQiOiI2YTgwNDUyZGMwY2I5YjY0ZTY5OTA4MTIiLCJpYXQiOjE3ODkxMDg1NTR9.kAjBr1YpuDfM9FFXH6ZDD7ZLZRDWuadBWWiDrU2Psi0";
@@ -68,12 +84,20 @@ export const sendSms = async (
             throw new ApiError(400, "Invalid mobile number");
         }
 
-        // OTP code → template variable (key configurable, default "code").
-        const variables: Record<string, string> = {};
+        // Caller-supplied placeholders (booking confirmation) come first so the
+        // legacy OTP key can never silently overwrite one of them.
+        const variables: Record<string, string> = { ...(smsData.variables ?? {}) };
         if (smsData.message) {
+            // OTP code → template variable (key configurable, default "code").
             const key = process.env.SMS_API_VARIABLES_KEY?.trim() || "code";
-            variables[key] = smsData.message;
+            if (!(key in variables)) {
+                variables[key] = smsData.message;
+            }
         }
+
+        // Every template on this gateway carries a header media; an empty URL
+        // makes the API reject the request, so always fall back to the default.
+        const mediaUrl = smsData.mediaUrl?.trim() || DEFAULT_MEDIA_URL;
 
         logger.info("Sending message via messaging API", { to, templateId });
 
@@ -101,9 +125,10 @@ export const sendSms = async (
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
-                        to, template: templateId, variables, media: {
-                            url: "https://res.cloudinary.com/dftt4ow6q/image/upload/v1789112613/fmxa9igwfibetwuc5pr8.jpg"
-                        }
+                        to,
+                        template: templateId,
+                        variables,
+                        media: { url: mediaUrl },
                     }),
                     signal: controller.signal,
                 });
@@ -231,5 +256,63 @@ export const sendOtpSms = async ({
                 ? `Could not send OTP: ${error.message}`
                 : "Could not send OTP"
         );
+    }
+};
+export interface SendTemplateSmsParams {
+    phone: string;
+    templateId?: string;
+    /** Placeholders filled into the approved template body. */
+    variables: Record<string, string>;
+    /** Header media URL. Falls back to the shared default image. */
+    mediaUrl?: string;
+    /** Label used in logs so each notification type is traceable. */
+    label?: string;
+}
+
+/**
+ * Generic template sender used by the non-OTP flows (booking confirmation).
+ * Unlike `sendOtpSms` it never throws for a gateway failure — callers use it
+ * fire-and-forget, so a dead gateway must not break the business action.
+ */
+export const sendTemplateSms = async ({
+    phone,
+    templateId,
+    variables,
+    mediaUrl,
+    label = "template",
+}: SendTemplateSmsParams): Promise<SendSmsResult> => {
+    if (!phone) {
+        throw new ApiError(400, "Phone number is required");
+    }
+
+    try {
+        const result = await sendSms(phone, {
+            templateId:
+                templateId ||
+                process.env.SMS_BOOKING_TEMPLATE_ID?.trim() ||
+                DEFAULT_BOOKING_TEMPLATE_ID,
+            variables,
+            mediaUrl,
+        });
+
+        if (!result.success) {
+            logger.error(`${label} message rejected by gateway`, {
+                statusCode: result.statusCode,
+                response: result.response || result.message,
+            });
+            return result;
+        }
+
+        logger.info(`${label} message sent successfully`);
+        return result;
+    } catch (error) {
+        logger.error(`${label} message failed`, {
+            message:
+                error instanceof Error ? error.message : String(error),
+        });
+        return {
+            success: false,
+            message: error instanceof Error ? error.message : String(error),
+        };
     }
 };
