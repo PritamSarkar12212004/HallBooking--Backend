@@ -315,6 +315,8 @@ export interface PaymentSectionInput {
     mode?: string;
     transactionNumber?: string | undefined;
     paymentProofPhoto?: string | undefined;
+    /** Event-end marker — staff swiped "End Event" on Finalize. */
+    finalize?: boolean;
 }
 
 const asChargeItems = (value: unknown): ChargeItemInput[] => {
@@ -393,6 +395,9 @@ export const validatePaymentSection = (
     }
     if (payBody.paymentProofPhoto !== undefined) {
         result.paymentProofPhoto = asString(payBody.paymentProofPhoto);
+    }
+    if (payBody.finalize !== undefined) {
+        result.finalize = payBody.finalize === true;
     }
 
     return result;

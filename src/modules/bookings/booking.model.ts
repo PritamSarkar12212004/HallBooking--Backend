@@ -283,6 +283,7 @@ const bookingSchema = new Schema<IBooking>(
                 "Office-Approved",
                 "Confirmed",
                 "Cancelled",
+                "Ended",
             ],
             default: "Draft",
         },
@@ -324,6 +325,10 @@ bookingSchema.index({ "schedule.startDate": 1 });
 bookingSchema.index({ "schedule.endDate": 1 });
 bookingSchema.index({ status: 1 });
 bookingSchema.index({ paymentStatus: 1 });
+// Applicant list is grouped by mobile (fallback: name), so both fields are
+// indexed to keep the applicant aggregation's matching stage fast.
+bookingSchema.index({ "applicant.mobile": 1 });
+bookingSchema.index({ "applicant.name": 1 });
 
 const Booking = mongoose.model<IBooking>(
     "Booking",

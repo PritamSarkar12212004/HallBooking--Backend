@@ -16,7 +16,8 @@ export type BookingStatus =
     | "Pending"
     | "Office-Approved"
     | "Confirmed"
-    | "Cancelled";
+    | "Cancelled"
+    | "Ended";
 
 
 export interface IBookingHall {

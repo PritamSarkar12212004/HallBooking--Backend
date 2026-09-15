@@ -139,6 +139,16 @@ export const updateBookingSection = async (
         throw new ApiError(404, "Booking not found");
     }
 
+    // Locked: ek baar event "Ended" ho gaya to uske saare numbers/status final
+    // hain — kisi bhi section ka koi update accept nahi hoga (frontend pe bhi
+    // swipe/edit hata diye gaye hain, ye server-side safety hai).
+    if (booking.status === "Ended") {
+        throw new ApiError(
+            409,
+            "Event already ended. No further changes are allowed."
+        );
+    }
+
     switch (section) {
         case "applicant": {
             const d = data as ApplicantSectionInput;
@@ -219,6 +229,13 @@ export const updateBookingSection = async (
             }
             if (d.depositReason !== undefined) {
                 booking.financial.securityDepositReason = d.depositReason;
+            }
+
+            // Event-end marker: staff swiped "End Event" from Finalize.
+            if (d.finalize === true) {
+                booking.status = "Ended";
+                if (!booking.handover) booking.handover = { items: [] };
+                booking.handover.completedAt = new Date();
             }
 
             recomputeFinancialTotals(booking);
@@ -522,19 +539,32 @@ export const getDashboard = async (): Promise<DashboardData> => {
         collectedAgg,
         cancelledCount,
     ] = await Promise.all([
+        // Home dashboard: "Ended" events ko Today's Events me nahi ginte —
+        // Cancelled ke saath hi inhe bhi bahar rakha jata hai.
         Booking.countDocuments({
             "schedule.startDate": { $lte: todayEnd },
             "schedule.endDate": { $gte: todayStart },
-            status: { $ne: "Cancelled" },
+            status: { $nin: ["Cancelled", "Ended"] },
         }),
         Booking.aggregate([
             { $match: { status: { $ne: "Cancelled" } } },
             { $group: { _id: null, total: { $sum: "$financial.balanceAmount" } } },
         ]),
-        Booking.countDocuments({ createdAt: { $gte: weekStart, $lte: weekEnd } }),
-        Booking.countDocuments({ createdAt: { $gte: prevWeekStart, $lte: weekStart } }),
-        Booking.countDocuments({ status: { $ne: "Cancelled" } }),
-        Booking.countDocuments({}),
+        // "Week's Bookings" = is hafte ke live bookings (ended/cancelled nahi).
+        Booking.countDocuments({
+            createdAt: { $gte: weekStart, $lte: weekEnd },
+            status: { $nin: ["Cancelled", "Ended"] },
+        }),
+        Booking.countDocuments({
+            createdAt: { $gte: prevWeekStart, $lte: weekStart },
+            status: { $nin: ["Cancelled", "Ended"] },
+        }),
+        // "Active Bookings" = na cancelled na ended.
+        Booking.countDocuments({ status: { $nin: ["Cancelled", "Ended"] } }),
+        // "Total Bookings" card / hero card ka "{n} bookings" chip — ended
+        // events yahan bhi count nahi honge (warna event end hone ke baad bhi
+        // total me dikhte rehte hain).
+        Booking.countDocuments({ status: { $ne: "Ended" } }),
         // Revenue = what the customer has actually paid, not the billed total.
         // Pending/due amounts are tracked separately via pendingPaymentsAmount.
         Booking.aggregate([
@@ -564,7 +594,12 @@ export const getDashboard = async (): Promise<DashboardData> => {
             d.getDate(),
         ).padStart(2, '0')}`;
 
-    const weekDocs = await Booking.find({ createdAt: { $gte: weekStart } })
+    // Ended events weekly chart me bhi nahi — warna end hone ke baad bhi bar
+    // count me dikhte rehte hain (chart = is hafte ke live bookings).
+    const weekDocs = await Booking.find({
+        createdAt: { $gte: weekStart },
+        status: { $nin: ["Cancelled", "Ended"] },
+    })
         .select({ createdAt: 1, "financial.advancePaid": 1 })
         .lean();
 
@@ -670,9 +705,11 @@ export const getDashboard = async (): Promise<DashboardData> => {
         eventImage: 1,
     };
     const [todayDocs, upcomingDocs, recentDocs] = await Promise.all([
+        // Ended events kisi bhi list (Today's / Upcoming) me show nahi honge.
         Booking.find({
             "schedule.startDate": { $lte: todayEnd },
             "schedule.endDate": { $gte: todayStart },
+            status: { $nin: ["Cancelled", "Ended"] },
         })
             .sort({ "schedule.startTime": 1 })
             .limit(5)
@@ -680,12 +717,13 @@ export const getDashboard = async (): Promise<DashboardData> => {
             .lean(),
         Booking.find({
             "schedule.startDate": { $gt: todayEnd, $lte: upcomingEnd },
+            status: { $nin: ["Cancelled", "Ended"] },
         })
             .sort({ "schedule.startDate": 1 })
             .limit(5)
             .select(eventSelect)
             .lean(),
-        Booking.find()
+        Booking.find({ status: { $nin: ["Cancelled", "Ended"] } })
             .sort({ createdAt: -1 })
             .limit(5)
             .select(eventSelect)
