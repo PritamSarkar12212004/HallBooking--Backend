@@ -111,26 +111,56 @@ const bookingSchema = new Schema({
         },
     },
     financial: {
-        hallRent: {
-            type: Number,
-            default: 0,
-            min: 0,
+        // Actual amount breakdown. Total is derived from these.
+        charges: {
+            type: [
+                new Schema({
+                    label: { type: String, required: true, trim: true },
+                    amount: { type: Number, default: 0, min: 0 },
+                    paid: { type: Number, default: 0, min: 0 },
+                }, { _id: false }),
+            ],
+            default: [],
         },
-        instrument: {
-            type: Number,
-            default: 0,
-            min: 0,
+        // Unit / consumption breakdown (water, light, AC, custom).
+        units: {
+            type: [
+                new Schema({
+                    label: { type: String, required: true, trim: true },
+                    quantity: { type: Number, default: 0, min: 0 },
+                    perUnit: { type: Number, default: 0, min: 0 },
+                    // Meter reading — recorded only, never charged.
+                    currentUnit: { type: Number, default: 0, min: 0 },
+                    amount: { type: Number, default: 0, min: 0 },
+                    paid: { type: Boolean, default: false },
+                }, { _id: false }),
+            ],
+            default: [],
         },
-        finalPayment: {
-            type: Number,
-            default: 0,
-            min: 0,
-        },
+        // Refundable — excluded from total/balance calculations.
         securityDeposit: {
             type: Number,
             default: 0,
             min: 0,
         },
+        // Deposit return tracking (updated at event end via Finalize Event).
+        securityDepositReturned: {
+            type: Boolean,
+            default: false,
+        },
+        // Amount deducted from the deposit (₹) at return time.
+        securityDepositDeducted: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        // Reason for the deduction (damage, extra consumption, etc.).
+        securityDepositReason: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+        // Derived caches (recomputed on every payment update).
         totalAmount: {
             type: Number,
             default: 0,
@@ -227,6 +257,7 @@ const bookingSchema = new Schema({
             "Office-Approved",
             "Confirmed",
             "Cancelled",
+            "Ended",
         ],
         default: "Draft",
     },
@@ -237,10 +268,6 @@ const bookingSchema = new Schema({
         },
         at: Date,
         note: String,
-    },
-    allocatedTeam: {
-        type: [String],
-        default: [],
     },
     bookedByStaff: {
         type: String,
@@ -256,6 +283,9 @@ const bookingSchema = new Schema({
         type: String,
         required: true,
     },
+    // WhatsApp confirmation marker. Deliberately has no default so the
+    // `confirmationNotifiedAt: { $exists: false }` guard keeps working.
+    confirmationNotifiedAt: Date,
 }, {
     timestamps: true,
 });
@@ -264,6 +294,10 @@ bookingSchema.index({ "schedule.startDate": 1 });
 bookingSchema.index({ "schedule.endDate": 1 });
 bookingSchema.index({ status: 1 });
 bookingSchema.index({ paymentStatus: 1 });
+// Applicant list is grouped by mobile (fallback: name), so both fields are
+// indexed to keep the applicant aggregation's matching stage fast.
+bookingSchema.index({ "applicant.mobile": 1 });
+bookingSchema.index({ "applicant.name": 1 });
 const Booking = mongoose.model("Booking", bookingSchema);
 export default Booking;
 //# sourceMappingURL=booking.model.js.map

@@ -208,6 +208,9 @@ export interface IBooking {
     bookedByStaff: string;
     createdBy: mongoose.Types.ObjectId;
     createdByName: string;
+    // Set once the WhatsApp booking confirmation has been handed to the
+    // gateway; its absence is the "not notified yet" signal (idempotency).
+    confirmationNotifiedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }

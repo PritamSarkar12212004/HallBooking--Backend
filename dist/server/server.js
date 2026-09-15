@@ -1,11 +1,32 @@
 import "dotenv/config";
 import app from "../app.js";
 import connectDB from "../config/database/db.js";
+import Booking from "../modules/bookings/booking.model.js";
 import { logger } from "../utils/logger.js";
 const PORT = Number(process.env.PORT) || 5000;
+// One-time (idempotent) backfill: events that were already finalized in the
+// past have used units recorded but no "Ended" status yet. Mark them + stamp
+// the handover time so the UI can show "Event End".
+const backfillEndedEvents = async () => {
+    try {
+        const { modifiedCount } = await Booking.updateMany({
+            "financial.units": { $elemMatch: { quantity: { $gt: 0 } } },
+            status: { $ne: "Ended" },
+        }, { $set: { status: "Ended", "handover.completedAt": new Date() } });
+        if (modifiedCount > 0) {
+            logger.info("Backfilled ended events", { modifiedCount });
+        }
+    }
+    catch (error) {
+        logger.warn("Backfill ended events failed", {
+            error: error instanceof Error ? error.message : error,
+        });
+    }
+};
 const startServer = async () => {
     try {
         await connectDB();
+        await backfillEndedEvents();
         const server = app.listen(PORT, () => {
             logger.info("Server is running", {
                 port: PORT,

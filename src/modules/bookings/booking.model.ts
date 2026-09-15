@@ -313,6 +313,10 @@ const bookingSchema = new Schema<IBooking>(
             type: String,
             required: true,
         },
+
+        // WhatsApp confirmation marker. Deliberately has no default so the
+        // `confirmationNotifiedAt: { $exists: false }` guard keeps working.
+        confirmationNotifiedAt: Date,
     },
     {
         timestamps: true,

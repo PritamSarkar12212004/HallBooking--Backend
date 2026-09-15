@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Booking from "./booking.model.js";
 import User from "../user/user.model.js";
+import { notifyBookingConfirmed } from "./booking-notification.service.js";
 import { ApiError } from "../../utils/api-error.js";
 const generateBookingNumber = async () => {
     const prefix = "BK";
@@ -33,13 +34,13 @@ export const createBookingDraft = async (input) => {
             endTime: input.endTime,
         },
         bookedByStaff: input.bookedByStaff,
-        allocatedTeam: input.allocatedTeam,
         applicant: {},
         arrangements: {},
         financial: {},
         signatures: {},
         payments: [],
-        status: "Draft",
+        // The booking is only created on the final step, so it is confirmed.
+        status: "Confirmed",
         createdBy: new mongoose.Types.ObjectId(input.createdBy),
         createdByName: input.createdByName,
     };
@@ -48,16 +49,19 @@ export const createBookingDraft = async (input) => {
     }
     return Booking.create(doc);
 };
-const updateDocBalanceAmount = (booking) => {
+const recomputeFinancialTotals = (booking) => {
     const financial = booking.financial;
-    const total = financial?.totalAmount ?? 0;
-    const advance = financial?.advancePaid ?? 0;
-    const finalPayment = financial?.finalPayment ?? 0;
-    const hallRent = financial?.hallRent ?? 0;
-    const instrument = financial?.instrument ?? 0;
-    // Balance = Total − Advance − Instrument − Hall Rent − Final Payment.
-    // Security deposit is a refundable hold, so it is NOT subtracted.
-    financial.balanceAmount = Math.max(0, total - advance - instrument - hallRent - finalPayment);
+    const charges = Array.isArray(financial?.charges) ? financial.charges : [];
+    const units = Array.isArray(financial?.units) ? financial.units : [];
+    const chargesTotal = charges.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+    const unitsTotal = units.reduce((sum, u) => sum + (Number(u.quantity) || 0) * (Number(u.perUnit) || 0), 0);
+    const total = chargesTotal + unitsTotal;
+    // Paid = charge payments + any units explicitly marked paid at event end.
+    const unitsPaid = units.reduce((sum, u) => sum + (u.paid ? (Number(u.quantity) || 0) * (Number(u.perUnit) || 0) : 0), 0);
+    const paid = charges.reduce((sum, c) => sum + (Number(c.paid) || 0), 0) + unitsPaid;
+    financial.totalAmount = total;
+    financial.advancePaid = paid;
+    financial.balanceAmount = Math.max(0, total - paid);
 };
 const isBookingComplete = (booking) => {
     const a = booking.applicant;
@@ -66,7 +70,10 @@ const isBookingComplete = (booking) => {
     const s = booking.signatures;
     const applicantOk = Boolean(a?.name && a?.mobile && a?.address && a?.governmentId?.type);
     const eventOk = Boolean(e?.type && e?.expectedAttendance && e?.name);
-    const financialOk = Boolean(f && (f.totalAmount ?? 0) > 0 && (f.advancePaid ?? 0) > 0 && f.mode);
+    const financialOk = Boolean(f &&
+        (f.totalAmount ?? 0) > 0 &&
+        (f.advancePaid ?? 0) > 0 &&
+        f.mode);
     const signatureOk = Boolean(s?.applicantPhoto && s?.managerPhoto);
     return applicantOk && eventOk && financialOk && signatureOk;
 };
@@ -77,6 +84,12 @@ export const updateBookingSection = async (id, section, data, userId) => {
     const booking = await Booking.findById(id);
     if (!booking) {
         throw new ApiError(404, "Booking not found");
+    }
+    // Locked: ek baar event "Ended" ho gaya to uske saare numbers/status final
+    // hain — kisi bhi section ka koi update accept nahi hoga (frontend pe bhi
+    // swipe/edit hata diye gaye hain, ye server-side safety hai).
+    if (booking.status === "Ended") {
+        throw new ApiError(409, "Event already ended. No further changes are allowed.");
     }
     switch (section) {
         case "applicant": {
@@ -131,49 +144,60 @@ export const updateBookingSection = async (id, section, data, userId) => {
         }
         case "payment": {
             const d = data;
-            // Capture previous values to build the audit diff.
             const before = {
-                hallRent: booking.financial.hallRent ?? 0,
-                instrument: booking.financial.instrument ?? 0,
                 securityDeposit: booking.financial.securityDeposit ?? 0,
                 totalAmount: booking.financial.totalAmount ?? 0,
                 advancePaid: booking.financial.advancePaid ?? 0,
-                finalPayment: booking.financial.finalPayment ?? 0,
             };
-            if (d.hallRent !== undefined)
-                booking.financial.hallRent = d.hallRent;
-            if (d.instrument !== undefined)
-                booking.financial.instrument = d.instrument;
-            if (d.securityDeposit !== undefined)
+            // Section 1: replace the actual amount breakdown.
+            if (d.charges !== undefined) {
+                booking.financial.charges = d.charges.map((c) => ({
+                    label: c.label,
+                    amount: c.amount,
+                    paid: c.paid,
+                }));
+            }
+            // Units: amount is derived from quantity × perUnit. currentUnit
+            // (meter reading) is stored for reference only — never charged.
+            // paid is honored so the final settlement at event end can mark
+            // the calculated units as paid in the same request.
+            if (d.units !== undefined) {
+                booking.financial.units = d.units.map((u) => ({
+                    label: u.label,
+                    quantity: u.quantity,
+                    perUnit: u.perUnit,
+                    currentUnit: u.currentUnit ?? 0,
+                    amount: u.quantity * u.perUnit,
+                    paid: u.paid === true,
+                }));
+            }
+            if (d.securityDeposit !== undefined) {
                 booking.financial.securityDeposit = d.securityDeposit;
-            if (d.totalAmount !== undefined)
-                booking.financial.totalAmount = d.totalAmount;
-            if (d.advancePaid !== undefined)
-                booking.financial.advancePaid = d.advancePaid;
-            if (d.finalPayment !== undefined)
-                booking.financial.finalPayment = d.finalPayment;
-            // totalAmount is kept exactly as sent by the client (manual entry).
-            // It is NOT auto-recalculated from hallRent + instrument +
-            // securityDeposit — those are informational components and their
-            // sum does not always equal the agreed total (e.g. discounts or
-            // extra charges). Overriding it caused wrong balances.
-            updateDocBalanceAmount(booking);
-            // Build audit entry: which numeric financial fields changed.
-            // balanceAmount is derived, so it is NOT tracked as a change —
-            // the Balance card only ever shows the current balance.
+            }
+            if (d.depositReturned !== undefined) {
+                booking.financial.securityDepositReturned = d.depositReturned;
+            }
+            if (d.depositDeducted !== undefined) {
+                booking.financial.securityDepositDeducted = Math.max(0, d.depositDeducted);
+            }
+            if (d.depositReason !== undefined) {
+                booking.financial.securityDepositReason = d.depositReason;
+            }
+            // Event-end marker: staff swiped "End Event" from Finalize.
+            if (d.finalize === true) {
+                booking.status = "Ended";
+                if (!booking.handover)
+                    booking.handover = { items: [] };
+                booking.handover.completedAt = new Date();
+            }
+            recomputeFinancialTotals(booking);
             const after = {
-                hallRent: booking.financial.hallRent ?? 0,
-                instrument: booking.financial.instrument ?? 0,
                 securityDeposit: booking.financial.securityDeposit ?? 0,
                 totalAmount: booking.financial.totalAmount ?? 0,
                 advancePaid: booking.financial.advancePaid ?? 0,
-                finalPayment: booking.financial.finalPayment ?? 0,
             };
-            const changes = Object.keys(after)
-                .filter((k) => (before[k] ?? 0) !== after[k])
-                // Security deposit is a refundable hold; changing it is not a
-                // payment event, so it must not be tracked in the history.
-                .filter((k) => k !== "securityDeposit")
+            const changes = ["totalAmount", "advancePaid"]
+                .filter((k) => before[k] !== after[k])
                 .map((k) => ({
                 field: k,
                 from: Number(before[k] ?? 0),
@@ -238,13 +262,16 @@ export const updateBookingSection = async (id, section, data, userId) => {
             throw new ApiError(400, "Unknown booking section");
     }
     if (booking.status === "Draft" && isBookingComplete(booking)) {
-        booking.status = "Pending";
+        booking.status = "Confirmed";
     }
     await booking.save();
+    // `declaration` is the last step of the booking flow, so a saved booking is
+    // a confirmed booking — send the WhatsApp confirmation exactly once
+    // (idempotency is enforced by `confirmationNotifiedAt`). Fire-and-forget:
+    // a cold/slow gateway must never break the save.
+    void notifyBookingConfirmed(booking);
     return booking;
 };
-// Dummy cartoon event image used when no real image exists yet.
-// Replace with your real CDN bucket URL when available.
 const DEFAULT_EVENT_IMAGE = "https://placehold.co/400x300/fdf2f8/be185d/png?text=%F0%9F%8E%AA+Event";
 const toStringId = (value) => typeof value === "string" ? value : String(value);
 export const listBookings = async (page = 1, pageSize = 10) => {
@@ -328,6 +355,7 @@ const endOfDay = (d) => {
 };
 const toEventItem = (b) => ({
     id: toStringId(b._id),
+    eventImage: b.eventImage || DEFAULT_EVENT_IMAGE,
     eventName: b.event?.name || "Untitled Event",
     eventType: b.event?.type || "Event",
     hallName: b.hall?.name || "N/A",
@@ -336,36 +364,62 @@ const toEventItem = (b) => ({
     startTime: b.schedule?.startTime || "",
     endTime: b.schedule?.endTime || "",
     totalAmount: b.financial?.totalAmount ?? 0,
-    status: b.status || "Draft",
+    // Normalize: "Office-Approved" ya "confirmed" booking = Confirmed for UI.
+    status: b.status === "Office-Approved" ? "Confirmed" : (b.status || "Draft"),
     paymentStatus: b.paymentStatus || "Pending",
+    bookedBy: b.bookedByStaff || b.createdByName || "N/A",
 });
 const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // Live dashboard analytics computed from real booking data.
 export const getDashboard = async () => {
     const now = new Date();
-    const todayStart = startOfDay(now);
-    const todayEnd = endOfDay(now);
+    // Client sends date-only strings ("YYYY-MM-DD") which MongoDB casts to UTC
+    // midnight — so day boundaries must be computed on the IST calendar date,
+    // otherwise early-morning IST hours land on the previous UTC day.
+    const IST_OFFSET_MS = 5.5 * 3600000;
+    const istShifted = new Date(now.getTime() + IST_OFFSET_MS);
+    const istDayStartUtc = Date.UTC(istShifted.getUTCFullYear(), istShifted.getUTCMonth(), istShifted.getUTCDate());
+    const todayStart = new Date(istDayStartUtc - IST_OFFSET_MS);
+    const todayEnd = new Date(istDayStartUtc + 86400000 - 1 - IST_OFFSET_MS);
+    const upcomingEnd = new Date(istDayStartUtc + 7 * 86400000 - 1 - IST_OFFSET_MS);
     const weekStart = startOfDay(new Date(now.getTime() - 6 * 86400000));
     const prevWeekStart = startOfDay(new Date(weekStart.getTime() - 7 * 86400000));
     const weekEnd = endOfDay(now);
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     // ── Core stats + financial aggregates (all in parallel) ─────────────
     const [todayCount, pendingAgg, weekCount, prevWeekCount, activeCount, totalCount, revenueAgg, collectedAgg, cancelledCount,] = await Promise.all([
+        // Home dashboard: "Ended" events ko Today's Events me nahi ginte —
+        // Cancelled ke saath hi inhe bhi bahar rakha jata hai.
         Booking.countDocuments({
-            "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
-            status: { $ne: "Cancelled" },
+            "schedule.startDate": { $lte: todayEnd },
+            "schedule.endDate": { $gte: todayStart },
+            status: { $nin: ["Cancelled", "Ended"] },
         }),
         Booking.aggregate([
             { $match: { status: { $ne: "Cancelled" } } },
             { $group: { _id: null, total: { $sum: "$financial.balanceAmount" } } },
         ]),
-        Booking.countDocuments({ createdAt: { $gte: weekStart, $lte: weekEnd } }),
-        Booking.countDocuments({ createdAt: { $gte: prevWeekStart, $lte: weekStart } }),
-        Booking.countDocuments({ status: { $ne: "Cancelled" } }),
-        Booking.countDocuments({}),
+        // "Week's Bookings" = is hafte ke live bookings (ended/cancelled nahi).
+        Booking.countDocuments({
+            createdAt: { $gte: weekStart, $lte: weekEnd },
+            status: { $nin: ["Cancelled", "Ended"] },
+        }),
+        Booking.countDocuments({
+            createdAt: { $gte: prevWeekStart, $lte: weekStart },
+            status: { $nin: ["Cancelled", "Ended"] },
+        }),
+        // "Active Bookings" = na cancelled na ended.
+        Booking.countDocuments({ status: { $nin: ["Cancelled", "Ended"] } }),
+        // "Total Bookings" card / hero card ka "{n} bookings" chip — ended
+        // events yahan bhi count nahi honge (warna event end hone ke baad bhi
+        // total me dikhte rehte hain).
+        Booking.countDocuments({ status: { $ne: "Ended" } }),
+        // Revenue = what the customer has actually paid, not the billed total.
+        // Pending/due amounts are tracked separately via pendingPaymentsAmount.
         Booking.aggregate([
             { $match: { status: { $ne: "Cancelled" } } },
-            { $group: { _id: null, total: { $sum: "$financial.totalAmount" } } },
+            { $group: { _id: null, total: { $sum: "$financial.advancePaid" } } },
         ]),
         Booking.aggregate([
             { $match: { status: { $ne: "Cancelled" } } },
@@ -373,37 +427,49 @@ export const getDashboard = async () => {
         ]),
         Booking.countDocuments({ status: "Cancelled" }),
     ]);
+    // NOTE: revenueAgg == collectedAgg intentionally — revenue reflects only
+    // the amount actually received from customers.
     const weeklyGrowth = prevWeekCount === 0
         ? (weekCount > 0 ? 100 : 0)
         : Math.round(((weekCount - prevWeekCount) / prevWeekCount) * 100);
     // Bookings created per day for the last 7 days (bar chart).
-    const chartRaw = await Booking.aggregate([
-        { $match: { createdAt: { $gte: weekStart } } },
-        {
-            $group: {
-                _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-                count: { $sum: 1 },
-            },
-        },
-    ]);
-    const chartMap = new Map(chartRaw.map((r) => [r._id, r.count]));
+    // Bucketed in server-local time (not UTC) so the day keys line up with the
+    // labels shown on the client — this was the source of the empty/incorrect
+    // weekly chart previously.
+    const localDateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    // Ended events weekly chart me bhi nahi — warna end hone ke baad bhi bar
+    // count me dikhte rehte hain (chart = is hafte ke live bookings).
+    const weekDocs = await Booking.find({
+        createdAt: { $gte: weekStart },
+        status: { $nin: ["Cancelled", "Ended"] },
+    })
+        .select({ createdAt: 1, "financial.advancePaid": 1 })
+        .lean();
+    const chartMap = new Map();
+    const weekRevMap = new Map();
+    for (const doc of weekDocs) {
+        if (!doc.createdAt)
+            continue;
+        const key = localDateKey(new Date(doc.createdAt));
+        chartMap.set(key, (chartMap.get(key) ?? 0) + 1);
+        weekRevMap.set(key, (weekRevMap.get(key) ?? 0) + (doc.financial?.advancePaid ?? 0));
+    }
     const weeklyChart = [];
     for (let i = 6; i >= 0; i--) {
         const day = new Date(now.getTime() - i * 86400000);
-        const key = day.toISOString().slice(0, 10);
+        const key = localDateKey(day);
         weeklyChart.push({
             value: chartMap.get(key) ?? 0,
             label: SHORT_DAYS[day.getDay()] ?? '',
         });
     }
     // ── Monthly revenue trend (last 6 months) ──────────────────────────
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     const monthlyRaw = await Booking.aggregate([
         { $match: { status: { $ne: "Cancelled" }, createdAt: { $gte: monthStart } } },
         {
             $group: {
                 _id: { $dateToString: { format: "%Y-%m", date: "$createdAt" } },
-                total: { $sum: "$financial.totalAmount" },
+                total: { $sum: "$financial.advancePaid" },
             },
         },
     ]);
@@ -415,6 +481,16 @@ export const getDashboard = async () => {
         monthlyRevenue.push({
             value: monthlyMap.get(key) ?? 0,
             label: SHORT_MONTHS[d.getMonth()] ?? '',
+        });
+    }
+    // ── Weekly revenue (last 7 days, per createdAt) ──────────────────
+    const weeklyRevenue = [];
+    for (let i = 6; i >= 0; i--) {
+        const day = new Date(now.getTime() - i * 86400000);
+        const key = localDateKey(day);
+        weeklyRevenue.push({
+            value: weekRevMap.get(key) ?? 0,
+            label: SHORT_DAYS[day.getDay()] ?? '',
         });
     }
     // ── Payment status distribution (non-cancelled) ────────────────────
@@ -434,7 +510,7 @@ export const getDashboard = async () => {
             $group: {
                 _id: "$hall.name",
                 bookings: { $sum: 1 },
-                revenue: { $sum: "$financial.totalAmount" },
+                revenue: { $sum: "$financial.advancePaid" },
             },
         },
         { $sort: { bookings: -1, revenue: -1 } },
@@ -455,25 +531,32 @@ export const getDashboard = async () => {
         "schedule.startTime": 1,
         "schedule.endTime": 1,
         "financial.totalAmount": 1,
+        bookedByStaff: 1,
+        createdByName: 1,
         status: 1,
         paymentStatus: 1,
+        eventImage: 1,
     };
     const [todayDocs, upcomingDocs, recentDocs] = await Promise.all([
+        // Ended events kisi bhi list (Today's / Upcoming) me show nahi honge.
         Booking.find({
-            "schedule.startDate": { $gte: todayStart, $lte: todayEnd },
+            "schedule.startDate": { $lte: todayEnd },
+            "schedule.endDate": { $gte: todayStart },
+            status: { $nin: ["Cancelled", "Ended"] },
         })
             .sort({ "schedule.startTime": 1 })
             .limit(5)
             .select(eventSelect)
             .lean(),
         Booking.find({
-            "schedule.startDate": { $gt: todayEnd, $lte: endOfDay(new Date(now.getTime() + 7 * 86400000)) },
+            "schedule.startDate": { $gt: todayEnd, $lte: upcomingEnd },
+            status: { $nin: ["Cancelled", "Ended"] },
         })
             .sort({ "schedule.startDate": 1 })
             .limit(5)
             .select(eventSelect)
             .lean(),
-        Booking.find()
+        Booking.find({ status: { $nin: ["Cancelled", "Ended"] } })
             .sort({ createdAt: -1 })
             .limit(5)
             .select(eventSelect)
@@ -492,6 +575,7 @@ export const getDashboard = async () => {
             weeklyGrowth,
         },
         weeklyChart,
+        weeklyRevenue,
         monthlyRevenue,
         paymentDistribution,
         hallStats,

@@ -292,7 +292,9 @@ export const sendTemplateSms = async ({
                 process.env.SMS_BOOKING_TEMPLATE_ID?.trim() ||
                 DEFAULT_BOOKING_TEMPLATE_ID,
             variables,
-            mediaUrl,
+            // `exactOptionalPropertyTypes` is on — an optional property must be
+            // omitted rather than passed as `undefined`.
+            ...(mediaUrl ? { mediaUrl } : {}),
         });
 
         if (!result.success) {

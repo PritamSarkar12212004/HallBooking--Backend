@@ -52,7 +52,6 @@ export const BOOKING_TERMS = [
     "The management shall not be responsible for loss, theft, or damage to personal belongings.",
 ];
 export const PAYMENT_MODES = ["Cash", "UPI", "Cheque", "NEFT/RTGS"];
-// "21 Aug 2026" -> Date
 const parseDisplayDate = (value) => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
@@ -95,7 +94,6 @@ export const validateHallCalendar = (body) => {
     const endTime = requiredString(body.endTime, "endTime");
     const eventName = requiredString(body.eventName, "eventName");
     const bookedByStaff = requiredString(body.bookedByStaff, "bookedByStaff");
-    const allocatedTeam = asStringArray(body.allocatedTeam, "allocatedTeam");
     const result = {
         bookingType,
         startDate,
@@ -104,7 +102,6 @@ export const validateHallCalendar = (body) => {
         endTime,
         eventName,
         bookedByStaff,
-        allocatedTeam,
     };
     if (body.hallId !== undefined) {
         result.hallId = String(body.hallId);
@@ -170,7 +167,9 @@ export const validateArrangementsSection = (body) => {
     const arrBody = (body?.arrangements ?? body);
     const result = {};
     if (arrBody.decoratorName !== undefined) {
-        result.decoratorName = requiredString(arrBody.decoratorName, "decoratorName");
+        const dn = asString(arrBody.decoratorName);
+        if (dn)
+            result.decoratorName = dn;
     }
     if (arrBody.decoratorContact !== undefined) {
         const c = asString(arrBody.decoratorContact);
@@ -181,7 +180,9 @@ export const validateArrangementsSection = (body) => {
         result.decorationTiming = requiredString(arrBody.decorationTiming, "decorationTiming");
     }
     if (arrBody.catererName !== undefined) {
-        result.catererName = requiredString(arrBody.catererName, "catererName");
+        const cn = asString(arrBody.catererName);
+        if (cn)
+            result.catererName = cn;
     }
     if (arrBody.catererContact !== undefined) {
         const c = asString(arrBody.catererContact);
@@ -197,29 +198,61 @@ export const validateArrangementsSection = (body) => {
     }
     return result;
 };
+const asChargeItems = (value) => {
+    if (!Array.isArray(value)) {
+        throw new ApiError(400, "payment.charges must be an array");
+    }
+    return value.map((raw, index) => {
+        const item = (raw ?? {});
+        const label = requiredString(item.label, `payment.charges[${index}].label`);
+        return {
+            label,
+            amount: asNumber(item.amount ?? 0, `payment.charges[${index}].amount`),
+            paid: asNumber(item.paid ?? 0, `payment.charges[${index}].paid`),
+        };
+    });
+};
+const asUnitItems = (value) => {
+    if (!Array.isArray(value)) {
+        throw new ApiError(400, "payment.units must be an array");
+    }
+    return value.map((raw, index) => {
+        const item = (raw ?? {});
+        const label = requiredString(item.label, `payment.units[${index}].label`);
+        const quantity = asNumber(item.quantity ?? 0, `payment.units[${index}].quantity`);
+        const perUnit = asNumber(item.perUnit ?? 0, `payment.units[${index}].perUnit`);
+        // Amount is always derived server-side — never trusted from the client.
+        // currentUnit (meter reading) is recorded but never charged.
+        return {
+            label,
+            quantity,
+            perUnit,
+            currentUnit: asNumber(item.currentUnit ?? 0, `payment.units[${index}].currentUnit`),
+            amount: quantity * perUnit,
+            paid: item.paid === true,
+        };
+    });
+};
 export const validatePaymentSection = (body) => {
     const payBody = (body?.payment ?? body);
     const result = {};
-    if (payBody.hallRent !== undefined) {
-        result.hallRent = asNumber(payBody.hallRent, "payment.hallRent");
+    if (payBody.charges !== undefined) {
+        result.charges = asChargeItems(payBody.charges);
     }
-    if (payBody.instrument !== undefined) {
-        result.instrument = asNumber(payBody.instrument, "payment.instrument");
+    if (payBody.units !== undefined) {
+        result.units = asUnitItems(payBody.units);
     }
     if (payBody.securityDeposit !== undefined) {
         result.securityDeposit = asNumber(payBody.securityDeposit, "payment.securityDeposit");
     }
-    if (payBody.totalAmount !== undefined) {
-        result.totalAmount = asNumber(payBody.totalAmount, "payment.totalAmount");
+    if (payBody.depositReturned !== undefined) {
+        result.depositReturned = payBody.depositReturned === true;
     }
-    if (payBody.advancePaid !== undefined) {
-        result.advancePaid = asNumber(payBody.advancePaid, "payment.advancePaid");
+    if (payBody.depositDeducted !== undefined) {
+        result.depositDeducted = asNumber(payBody.depositDeducted, "payment.depositDeducted");
     }
-    if (payBody.finalPayment !== undefined) {
-        result.finalPayment = asNumber(payBody.finalPayment, "payment.finalPayment");
-    }
-    if (payBody.balanceAmount !== undefined) {
-        result.balanceAmount = asNumber(payBody.balanceAmount, "payment.balanceAmount");
+    if (payBody.depositReason !== undefined) {
+        result.depositReason = asString(payBody.depositReason);
     }
     if (payBody.mode !== undefined) {
         const mode = requiredString(payBody.mode, "payment.mode");
@@ -233,6 +266,9 @@ export const validatePaymentSection = (body) => {
     }
     if (payBody.paymentProofPhoto !== undefined) {
         result.paymentProofPhoto = asString(payBody.paymentProofPhoto);
+    }
+    if (payBody.finalize !== undefined) {
+        result.finalize = payBody.finalize === true;
     }
     return result;
 };

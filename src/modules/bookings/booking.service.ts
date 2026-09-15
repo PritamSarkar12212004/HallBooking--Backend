@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Booking from "./booking.model.js";
 import User from "../user/user.model.js";
+import { notifyBookingConfirmed } from "./booking-notification.service.js";
 import { ApiError } from "../../utils/api-error.js";
 import type { IBooking, ICaterer, IDecorator, PaymentMode } from "./booking.type.js";
 import type {
@@ -321,6 +322,13 @@ export const updateBookingSection = async (
     }
 
     await booking.save();
+
+    // `declaration` is the last step of the booking flow, so a saved booking is
+    // a confirmed booking — send the WhatsApp confirmation exactly once
+    // (idempotency is enforced by `confirmationNotifiedAt`). Fire-and-forget:
+    // a cold/slow gateway must never break the save.
+    void notifyBookingConfirmed(booking);
+
     return booking;
 };
 
