@@ -44,12 +44,9 @@ export const handleBookingMeta = asyncHandler(
                 hallRequirements: HALL_REQUIREMENTS,
                 governmentIdTypes: GOVERNMENT_ID_TYPES,
                 terms: BOOKING_TERMS,
-                upi: {
-                    // Dummy UPI id + QR image (generated via an external QR API).
-                    id: "hallbooking@upi",
-                    name: "Hall Booking",
-                    qrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=upi://pay?pa=hallbooking%40upi%26pn=Hall%20Booking",
-                },
+                // NOTE: the UPI QR used to be served from here as a hardcoded
+                // "server default". It is now owned by the CEO and served from
+                // GET /api/v1/payment-qr (see modules/payment-qr).
             },
         });
     }

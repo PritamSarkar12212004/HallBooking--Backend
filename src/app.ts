@@ -6,6 +6,7 @@ import morgan from "morgan";
 import authRouter from "./modules/auth/auth.route.js";
 import bookingRouter from "./modules/bookings/booking.route.js";
 import applicantRouter from "./modules/applicants/applicant.route.js";
+import paymentQrRouter from "./modules/payment-qr/qr.route.js";
 import {
     errorMiddleware,
     notFoundHandler,
@@ -36,6 +37,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/bookings", bookingRouter);
 app.use("/api/v1/applicants", applicantRouter);
+app.use("/api/v1/payment-qr", paymentQrRouter);
 app.use(notFoundHandler);
 app.use(errorMiddleware);
 export default app;
