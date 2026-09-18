@@ -1,7 +1,10 @@
 import mongoose from "mongoose";
 import Booking from "./booking.model.js";
 import User from "../user/user.model.js";
-import { notifyBookingConfirmed } from "./booking-notification.service.js";
+import {
+    notifyBookingConfirmed,
+    notifyBookingConfirmedToAdmin,
+} from "./booking-notification.service.js";
 import { ApiError } from "../../utils/api-error.js";
 import type { IBooking, ICaterer, IDecorator, PaymentMode } from "./booking.type.js";
 import type {
@@ -328,6 +331,10 @@ export const updateBookingSection = async (
     // (idempotency is enforced by `confirmationNotifiedAt`). Fire-and-forget:
     // a cold/slow gateway must never break the save.
     void notifyBookingConfirmed(booking);
+
+    // Admin ko bhi wahi confirmation jata hai (alag template + alag
+    // idempotency marker), taaki office ko har booking ka pata rahe.
+    void notifyBookingConfirmedToAdmin(booking);
 
     return booking;
 };

@@ -1,7 +1,7 @@
 import Booking from "./booking.model.js";
 import User from "../user/user.model.js";
 import { logger } from "../../utils/logger.js";
-import { sendTemplateSms } from "../../utils/sms.service.js";
+import { sendTemplateSms, type SendSmsResult } from "../../utils/sms.service.js";
 import type { IBooking } from "./booking.type.js";
 
 /**
@@ -234,6 +234,108 @@ export const notifyBookingConfirmed = async (
         return { sent: true, variables };
     } catch (error) {
         logger.error("Booking confirmation failed", {
+            message: error instanceof Error ? error.message : String(error),
+        });
+        return { sent: false, skipped: "error" };
+    }
+};
+
+// ─── Admin copy ─────────────────────────────────────────────────────────────
+// The customer message can silently fail (wrong number, DND, cold gateway), so
+// the hall admin gets the same confirmation on their own number and can follow
+// up manually.
+
+// Hall admin's WhatsApp number(s) — comma separated via SMS_ADMIN_PHONES.
+// Default is the whitelisted CEO phone already used across the app.
+const DEFAULT_ADMIN_PHONES = ["7796419792"];
+
+// Dedicated template for the admin copy (same placeholders as the customer
+// template). Overridable via SMS_ADMIN_TEMPLATE_ID.
+const DEFAULT_ADMIN_TEMPLATE_ID = "6aad033cfdcd1a027b9e437d";
+
+const resolveAdminPhones = (): string[] => {
+    const fromEnv = (process.env.SMS_ADMIN_PHONES ?? "")
+        .split(",")
+        .map((phone) => phone.replace(/\D/g, ""))
+        .filter((phone) => phone.length >= 10);
+
+    return fromEnv.length > 0 ? fromEnv : DEFAULT_ADMIN_PHONES;
+};
+
+/**
+ * Admin's own copy of the booking confirmation — sent to the hall admin's
+ * number exactly once (own idempotency marker: `adminNotifiedAt`), with the
+ * same template placeholders and the same header media the customer message
+ * uses. Fire-and-forget, never throws.
+ */
+export const notifyBookingConfirmedToAdmin = async (
+    booking: IBooking
+): Promise<BookingNotificationResult> => {
+    try {
+        if (!isConfirmationReady(booking)) {
+            return { sent: false, skipped: "not-ready" };
+        }
+
+        if (booking.status === "Cancelled" || booking.status === "Ended") {
+            return { sent: false, skipped: "inactive-status" };
+        }
+
+        const bookingId = toBookingId(booking);
+        if (!bookingId) {
+            return { sent: false, skipped: "not-ready" };
+        }
+
+        const recipients = resolveAdminPhones();
+        if (recipients.length === 0) {
+            return { sent: false, skipped: "no-recipient" };
+        }
+
+        const claimed = await Booking.findOneAndUpdate(
+            { _id: bookingId, adminNotifiedAt: { $exists: false } },
+            { $set: { adminNotifiedAt: new Date() } },
+            { new: true }
+        );
+
+        if (!claimed) {
+            return { sent: false, skipped: "already-notified" };
+        }
+
+        const bookerPhone = await resolveBookerPhone(claimed);
+        const variables = buildBookingConfirmationVariables(
+            claimed,
+            bookerPhone || claimed.applicant?.mobile || ""
+        );
+
+        // `mediaUrl` jaan-boojh kar omit hai — gateway wahi header image
+        // attach karta hai jo customer confirmation me already use hoti hai.
+        let failed: SendSmsResult | null = null;
+        for (const phone of recipients) {
+            const result = await sendTemplateSms({
+                phone,
+                templateId:
+                    process.env.SMS_ADMIN_TEMPLATE_ID?.trim() ||
+                    DEFAULT_ADMIN_TEMPLATE_ID,
+                variables,
+                label: `Admin booking confirmation (${variables.booking_id})`,
+            });
+
+            if (!result.success) {
+                failed = result;
+            }
+        }
+
+        if (failed) {
+            logger.warn("Admin booking confirmation not delivered, will retry", {
+                bookingNumber: variables.booking_id,
+                statusCode: failed.statusCode,
+            });
+            await releaseClaim(bookingId);
+            return { sent: false, skipped: "gateway-error", variables };
+        }
+
+        return { sent: true, variables };
+    } catch (error) {
+        logger.error("Admin booking confirmation failed", {
             message: error instanceof Error ? error.message : String(error),
         });
         return { sent: false, skipped: "error" };

@@ -211,6 +211,9 @@ export interface IBooking {
     // Set once the WhatsApp booking confirmation has been handed to the
     // gateway; its absence is the "not notified yet" signal (idempotency).
     confirmationNotifiedAt?: Date;
+    // Same idempotency marker, but for the admin's own copy of the
+    // confirmation message (so the customer retry loop never blocks it).
+    adminNotifiedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }

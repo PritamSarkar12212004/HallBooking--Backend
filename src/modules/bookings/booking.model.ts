@@ -317,6 +317,10 @@ const bookingSchema = new Schema<IBooking>(
         // WhatsApp confirmation marker. Deliberately has no default so the
         // `confirmationNotifiedAt: { $exists: false }` guard keeps working.
         confirmationNotifiedAt: Date,
+
+        // Admin copy of the same confirmation — separate marker so the two
+        // notifications retry independently of each other.
+        adminNotifiedAt: Date,
     },
     {
         timestamps: true,
