@@ -134,20 +134,32 @@ const resolveBookerPhone = async (booking: IBooking): Promise<string> => {
 };
 
 /**
- * Template placeholders for a booking. Exported so the mapping can be previewed
- * / asserted without touching the gateway.
+ * Customer template placeholders (template `6aad0af6fdcd1a027b9e4389`).
+ * Sirf wahi 6 keys bhej rahe hain jo us template me approved hain — extra
+ * placeholder bhejne par gateway "variable not found" de deta hai.
  */
-export const buildBookingConfirmationVariables = (
-    booking: IBooking,
-    contactNumber: string
+export const buildCustomerConfirmationVariables = (
+    booking: IBooking
 ): Record<string, string> => ({
-    customer_name: booking.applicant?.name?.trim() || "Guest",
     booking_id: booking.bookingNumber || String(toBookingId(booking)),
+    customer_name: booking.applicant?.name?.trim() || "Guest",
     hall_name: resolveHallName(booking),
     booking_date: formatDate(booking.schedule?.startDate),
     start_time: formatTime(booking.schedule?.startTime),
     end_time: formatTime(booking.schedule?.endTime),
     guest_count: String(booking.event?.expectedAttendance ?? 0),
+});
+
+/**
+ * Admin copy placeholders (template `6aad033cfdcd1a027b9e437d`) — customer
+ * message ke saare fields + amounts aur booker ka contact number.
+ * Exported so the mapping can be previewed / asserted without the gateway.
+ */
+export const buildAdminConfirmationVariables = (
+    booking: IBooking,
+    contactNumber: string
+): Record<string, string> => ({
+    ...buildCustomerConfirmationVariables(booking),
     total_amount: formatAmount(booking.financial?.totalAmount),
     paid_amount: formatAmount(booking.financial?.advancePaid),
     remaining_amount: formatAmount(booking.financial?.balanceAmount),
@@ -172,10 +184,9 @@ const releaseClaim = async (bookingId: unknown): Promise<void> => {
 /**
  * Sends the WhatsApp confirmation template for a booking exactly once.
  *
- * The recipient is the customer (`applicant.mobile`); the template's
- * `contact_number` placeholder carries the number of the user who booked, so
- * the customer knows who to call. Callers use this fire-and-forget — it never
- * throws.
+ * The recipient is the customer (`applicant.mobile`) and the template carries
+ * the booking summary (id, name, hall, date, times, guest count). Callers use
+ * this fire-and-forget — it never throws.
  */
 export const notifyBookingConfirmed = async (
     booking: IBooking
@@ -211,11 +222,7 @@ export const notifyBookingConfirmed = async (
             return { sent: false, skipped: "already-notified" };
         }
 
-        const bookerPhone = await resolveBookerPhone(claimed);
-        const variables = buildBookingConfirmationVariables(
-            claimed,
-            bookerPhone || recipient
-        );
+        const variables = buildCustomerConfirmationVariables(claimed);
 
         const result = await sendTemplateSms({
             phone: recipient,
@@ -301,7 +308,7 @@ export const notifyBookingConfirmedToAdmin = async (
         }
 
         const bookerPhone = await resolveBookerPhone(claimed);
-        const variables = buildBookingConfirmationVariables(
+        const variables = buildAdminConfirmationVariables(
             claimed,
             bookerPhone || claimed.applicant?.mobile || ""
         );

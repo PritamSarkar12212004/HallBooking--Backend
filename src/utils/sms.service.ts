@@ -20,6 +20,8 @@ export interface SendSmsData {
     variables?: Record<string, string>;
     /** Header media of the template. Falls back to DEFAULT_MEDIA_URL. */
     mediaUrl?: string;
+    /** Per-flow gateway override (defaults to SMS_API_URL). */
+    apiUrl?: string;
 }
 
 export interface SendOtpSmsParams {
@@ -32,10 +34,10 @@ const DEFAULT_API_URL =
 
 const DEFAULT_TEMPLATE_ID = "6aa397f544cd4f83cc61db41";
 
-// Booking-confirmation template. The earlier ID (6aa95e384b27a4cbc3c8057e)
-// was rejected by the gateway with 404 "Template not found", so the approved
-// one is the default now — still overridable via SMS_BOOKING_TEMPLATE_ID.
-export const DEFAULT_BOOKING_TEMPLATE_ID = "6aad033cfdcd1a027b9e437d";
+// Customer booking-confirmation template (6aad0af6fdcd1a027b9e4389) — 6
+// placeholders only (see buildCustomerConfirmationVariables). Overridable via
+// SMS_BOOKING_TEMPLATE_ID. Admin copy ka apna template hai (SMS_ADMIN_TEMPLATE_ID).
+export const DEFAULT_BOOKING_TEMPLATE_ID = "6aad0af6fdcd1a027b9e4389";
 
 // The gateway rejects a template with a missing/relative media URL, so a
 // public image is always attached unless the caller supplies its own.
@@ -60,7 +62,10 @@ export const sendSms = async (
     smsData: SendSmsData = {}
 ): Promise<SendSmsResult> => {
     try {
-        const apiUrl = process.env.SMS_API_URL?.trim() || DEFAULT_API_URL;
+        const apiUrl =
+            smsData.apiUrl?.trim() ||
+            process.env.SMS_API_URL?.trim() ||
+            DEFAULT_API_URL;
         const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3cG51bWJlciI6Ijc3OTY0MTk3OTIiLCJ1c2VySWQiOiI2YTgwNDUyZGMwY2I5YjY0ZTY5OTA4MTIiLCJpYXQiOjE3ODkxMDg1NTR9.kAjBr1YpuDfM9FFXH6ZDD7ZLZRDWuadBWWiDrU2Psi0";
         const templateId =
             smsData.templateId ||
@@ -268,6 +273,12 @@ export interface SendTemplateSmsParams {
     mediaUrl?: string;
     /** Label used in logs so each notification type is traceable. */
     label?: string;
+    /**
+     * Gateway URL for this flow. Booking confirmation apne gateway
+     * (`SMS_BOOKING_API_URL`) par ja sakta hai, jabki OTP `SMS_API_URL` par —
+     * isliye per-flow override.
+     */
+    apiUrl?: string;
 }
 
 /**
@@ -281,12 +292,18 @@ export const sendTemplateSms = async ({
     variables,
     mediaUrl,
     label = "template",
+    apiUrl,
 }: SendTemplateSmsParams): Promise<SendSmsResult> => {
     if (!phone) {
         throw new ApiError(400, "Phone number is required");
     }
 
     try {
+        // Booking confirmation apne gateway par (SMS_BOOKING_API_URL); na set ho
+        // to wahi shared SMS_API_URL use hota hai.
+        const gatewayUrl =
+            apiUrl?.trim() || process.env.SMS_BOOKING_API_URL?.trim() || "";
+
         const result = await sendSms(phone, {
             templateId:
                 templateId ||
@@ -296,6 +313,7 @@ export const sendTemplateSms = async ({
             // `exactOptionalPropertyTypes` is on — an optional property must be
             // omitted rather than passed as `undefined`.
             ...(mediaUrl ? { mediaUrl } : {}),
+            ...(gatewayUrl ? { apiUrl: gatewayUrl } : {}),
         });
 
         if (!result.success) {
