@@ -32,9 +32,10 @@ const DEFAULT_API_URL =
 
 const DEFAULT_TEMPLATE_ID = "6aa397f544cd4f83cc61db41";
 
-// Booking-confirmation template ("For any assistance, please contact us at …").
-// Overridable per-environment via SMS_BOOKING_TEMPLATE_ID.
-export const DEFAULT_BOOKING_TEMPLATE_ID = "6aa95e384b27a4cbc3c8057e";
+// Booking-confirmation template. The earlier ID (6aa95e384b27a4cbc3c8057e)
+// was rejected by the gateway with 404 "Template not found", so the approved
+// one is the default now — still overridable via SMS_BOOKING_TEMPLATE_ID.
+export const DEFAULT_BOOKING_TEMPLATE_ID = "6aad033cfdcd1a027b9e437d";
 
 // The gateway rejects a template with a missing/relative media URL, so a
 // public image is always attached unless the caller supplies its own.
