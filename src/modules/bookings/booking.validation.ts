@@ -35,7 +35,6 @@ export const GOVERNMENT_ID_TYPES = [
     "PAN Card",
     "Driving Licence",
     "Passport",
-    /** Frontend ka catch-all option — ID number manually type kiya jaata hai. */
     "ID Card",
 ] as const;
 
@@ -76,6 +75,10 @@ export const PAYMENT_MODES = ["Cash", "UPI", "Cheque", "NEFT/RTGS"] as const;
 export const GOVERNMENT_ID_NAME_MIN_LENGTH = 3;
 export const GOVERNMENT_ID_NAME_MAX_LENGTH = 60;
 
+/** "Other" event type ke naam ki limit — frontend ke sanitize ke saath match. */
+export const EVENT_CUSTOM_TYPE_MIN_LENGTH = 3;
+export const EVENT_CUSTOM_TYPE_MAX_LENGTH = 40;
+
 const parseDisplayDate = (value: string): Date => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
@@ -111,6 +114,40 @@ const asStringArray = (value: unknown, label: string): string[] => {
         throw new ApiError(400, `${label} must be an array`);
     }
     return value.map((item) => String(item).trim()).filter(Boolean);
+};
+
+/**
+ * Hall requirements ki quantity list — frontend har selected requirement ke
+ * saath `{ label, quantity }` bhejta hai. Quantity 0 allowed hai (matlab "abhi
+ * decide nahi"), kyunki purane clients ye field bhejte hi nahi.
+ */
+const asRequirementQuantities = (
+    value: unknown
+): { label: string; quantity: number }[] => {
+    if (value === undefined || value === null) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        throw new ApiError(400, "event.requirementQuantities must be an array");
+    }
+    return value.map((raw, index) => {
+        const item = (raw ?? {}) as Record<string, unknown>;
+        const label = requiredString(
+            item.label,
+            `event.requirementQuantities[${index}].label`
+        );
+        const quantity = asNumber(
+            item.quantity ?? 0,
+            `event.requirementQuantities[${index}].quantity`
+        );
+        if (quantity < 0) {
+            throw new ApiError(
+                400,
+                `event.requirementQuantities[${index}].quantity must be 0 or more`
+            );
+        }
+        return { label, quantity };
+    });
 };
 
 export interface HallCalendarInput {
@@ -168,6 +205,12 @@ export interface EventSectionInput {
     expectedAttendance?: number;
     type?: string;
     requirements?: string[];
+    /** "Other" event type ka manually type kiya gaya naam (optional). */
+    customType?: string | undefined;
+    /** Evidence / reference photo ka Cloudinary URL (optional). */
+    evidencePhoto?: string | undefined;
+    /** Har selected requirement ki quantity (optional). */
+    requirementQuantities?: { label: string; quantity: number }[];
 }
 
 export const validateEventSection = (
@@ -195,6 +238,34 @@ export const validateEventSection = (
             "event.requirements"
         );
         result.requirements = requirements;
+    }
+
+    // "Other" event type ka manually type kiya gaya naam (optional).
+    if (eventBody.customType !== undefined) {
+        const customType = asString(eventBody.customType);
+        if (
+            customType &&
+            (customType.length < EVENT_CUSTOM_TYPE_MIN_LENGTH ||
+                customType.length > EVENT_CUSTOM_TYPE_MAX_LENGTH)
+        ) {
+            throw new ApiError(
+                400,
+                `event.customType must be ${EVENT_CUSTOM_TYPE_MIN_LENGTH}-${EVENT_CUSTOM_TYPE_MAX_LENGTH} characters`
+            );
+        }
+        result.customType = customType;
+    }
+
+    // Evidence / reference photo (Cloudinary URL) — optional.
+    if (eventBody.evidencePhoto !== undefined) {
+        result.evidencePhoto = asString(eventBody.evidencePhoto);
+    }
+
+    // Har selected requirement ki quantity — optional.
+    if (eventBody.requirementQuantities !== undefined) {
+        result.requirementQuantities = asRequirementQuantities(
+            eventBody.requirementQuantities
+        );
     }
 
     return result;

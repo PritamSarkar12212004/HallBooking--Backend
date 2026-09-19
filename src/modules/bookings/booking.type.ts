@@ -46,11 +46,22 @@ export interface IApplicant {
 }
 
 
+export interface IRequirementQuantity {
+    label: string;
+    quantity: number;
+}
+
 export interface IEvent {
     type: string;
+    /** "Other" event type ka manually type kiya gaya naam. */
+    customType?: string;
+    /** Evidence / reference photo (Cloudinary URL). */
+    evidencePhoto?: string;
     expectedAttendance: number;
     timeSlots: string[];
     hallRequirements: string[];
+    /** Har selected hall requirement ki quantity. */
+    requirementQuantities?: IRequirementQuantity[];
     name: string;
 }
 

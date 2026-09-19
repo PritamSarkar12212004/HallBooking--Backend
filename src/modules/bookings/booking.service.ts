@@ -171,6 +171,11 @@ export const updateBookingSection = async (
             if (d.type !== undefined) booking.event.type = d.type;
             if (d.expectedAttendance !== undefined) booking.event.expectedAttendance = d.expectedAttendance;
             if (d.requirements !== undefined) booking.event.hallRequirements = d.requirements;
+            if (d.customType !== undefined) booking.event.customType = d.customType;
+            if (d.evidencePhoto !== undefined) booking.event.evidencePhoto = d.evidencePhoto;
+            if (d.requirementQuantities !== undefined) {
+                booking.event.requirementQuantities = d.requirementQuantities;
+            }
             break;
         }
         case "arrangements": {

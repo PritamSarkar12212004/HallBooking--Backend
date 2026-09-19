@@ -74,6 +74,17 @@ const bookingSchema = new Schema<IBooking>(
                 type: String,
                 default: "",
             },
+            /** "Other" event type ka manually type kiya gaya naam. */
+            customType: {
+                type: String,
+                default: "",
+                trim: true,
+            },
+            /** Evidence / reference photo (Cloudinary URL). */
+            evidencePhoto: {
+                type: String,
+                default: "",
+            },
             expectedAttendance: {
                 type: Number,
                 default: 0,
@@ -85,6 +96,19 @@ const bookingSchema = new Schema<IBooking>(
             },
             hallRequirements: {
                 type: [String],
+                default: [],
+            },
+            /** Har selected hall requirement ki quantity. */
+            requirementQuantities: {
+                type: [
+                    new Schema(
+                        {
+                            label: { type: String, required: true, trim: true },
+                            quantity: { type: Number, default: 0, min: 0 },
+                        },
+                        { _id: false }
+                    ),
+                ],
                 default: [],
             },
             name: {
