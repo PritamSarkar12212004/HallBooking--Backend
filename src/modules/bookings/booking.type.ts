@@ -29,6 +29,8 @@ export interface IBookingHall {
 
 export interface IGovernmentId {
     type: string;
+    /** Custom "Other ID" ka manually typed naam (fixed cards par khaali). */
+    name?: string;
     number: string;
     photo?: string;
 }

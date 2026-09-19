@@ -72,6 +72,10 @@ export const BOOKING_TERMS = [
 
 export const PAYMENT_MODES = ["Cash", "UPI", "Cheque", "NEFT/RTGS"] as const;
 
+/** "Other ID" naam ki limit — frontend ke sanitize ke saath match karti hai. */
+export const GOVERNMENT_ID_NAME_MIN_LENGTH = 3;
+export const GOVERNMENT_ID_NAME_MAX_LENGTH = 60;
+
 const parseDisplayDate = (value: string): Date => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
@@ -203,6 +207,8 @@ export interface ApplicantSectionInput {
     address?: string;
     email?: string | undefined;
     governmentIdType?: string;
+    /** Custom "Other ID" ka manually typed naam (optional). */
+    governmentIdName?: string | undefined;
     governmentIdNumber?: string | undefined;
     governmentIdPhoto?: string | undefined;
 }
@@ -241,6 +247,23 @@ export const validateApplicantSection = (
             throw new ApiError(400, "Invalid applicant.governmentIdType");
         }
         result.governmentIdType = type;
+    }
+    // "Other ID" — frontend me manually type kiya gaya custom ID naam. Fixed
+    // card ("Aadhaar Card", etc.) ke saath khaali aata hai, isliye optional hai;
+    // diya jaaye to 3-60 characters ka hona chahiye.
+    if (appBody.governmentIdName !== undefined) {
+        const idName = asString(appBody.governmentIdName);
+        if (
+            idName &&
+            (idName.length < GOVERNMENT_ID_NAME_MIN_LENGTH ||
+                idName.length > GOVERNMENT_ID_NAME_MAX_LENGTH)
+        ) {
+            throw new ApiError(
+                400,
+                `applicant.governmentIdName must be ${GOVERNMENT_ID_NAME_MIN_LENGTH}-${GOVERNMENT_ID_NAME_MAX_LENGTH} characters`
+            );
+        }
+        result.governmentIdName = idName;
     }
     // Manual entry — frontend se type kiya gaya ID number (optional).
     if (appBody.governmentIdNumber !== undefined) {

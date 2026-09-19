@@ -65,7 +65,6 @@ export const createBookingDraft = async (
         financial: {},
         signatures: {},
         payments: [],
-        // The booking is only created on the final step, so it is confirmed.
         status: "Confirmed",
         createdBy: new mongoose.Types.ObjectId(input.createdBy),
         createdByName: input.createdByName,
@@ -162,6 +161,7 @@ export const updateBookingSection = async (
             if (d.address !== undefined) booking.applicant.address = d.address;
             if (d.email !== undefined) booking.applicant.email = d.email;
             if (d.governmentIdType !== undefined) booking.applicant.governmentId.type = d.governmentIdType;
+            if (d.governmentIdName !== undefined) booking.applicant.governmentId.name = d.governmentIdName;
             if (d.governmentIdNumber !== undefined) booking.applicant.governmentId.number = d.governmentIdNumber;
             if (d.governmentIdPhoto !== undefined) booking.applicant.governmentId.photo = d.governmentIdPhoto;
             break;

@@ -55,6 +55,12 @@ const bookingSchema = new Schema<IBooking>(
                     type: String,
                     default: "",
                 },
+                /** Custom "Other ID" naam (fixed cards par khaali rehta hai). */
+                name: {
+                    type: String,
+                    default: "",
+                    trim: true,
+                },
                 number: {
                     type: String,
                     default: "",
