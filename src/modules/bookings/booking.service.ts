@@ -223,6 +223,8 @@ export const updateBookingSection = async (
                     quantity: u.quantity,
                     perUnit: u.perUnit,
                     currentUnit: u.currentUnit ?? 0,
+                    // Optional meter photo — reading ka evidence.
+                    meterPhoto: u.meterPhoto ?? "",
                     amount: u.quantity * u.perUnit,
                     paid: u.paid === true,
                 }));

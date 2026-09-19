@@ -179,6 +179,8 @@ const bookingSchema = new Schema<IBooking>(
                             perUnit: { type: Number, default: 0, min: 0 },
                             // Meter reading — recorded only, never charged.
                             currentUnit: { type: Number, default: 0, min: 0 },
+                            // Optional meter photo (Cloudinary URL) as reading evidence.
+                            meterPhoto: { type: String, default: "" },
                             amount: { type: Number, default: 0, min: 0 },
                             paid: { type: Boolean, default: false },
                         },

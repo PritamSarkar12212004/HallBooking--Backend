@@ -406,6 +406,8 @@ export interface UnitItemInput {
     perUnit: number;
     /** Meter reading — recorded only, excluded from payment calculations. */
     currentUnit: number;
+    /** Optional meter photo (Cloudinary URL) captured with the reading. */
+    meterPhoto?: string | undefined;
     amount: number;
     paid: boolean;
 }
@@ -456,6 +458,8 @@ const asUnitItems = (value: unknown): UnitItemInput[] => {
             quantity,
             perUnit,
             currentUnit: asNumber(item.currentUnit ?? 0, `payment.units[${index}].currentUnit`),
+            // Optional meter photo (URL) — reading ka evidence.
+            meterPhoto: asString(item.meterPhoto) ?? "",
             amount: quantity * perUnit,
             paid: item.paid === true,
         };

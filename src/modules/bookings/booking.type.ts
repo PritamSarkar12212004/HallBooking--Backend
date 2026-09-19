@@ -112,6 +112,10 @@ export interface IUnitItem {
     amount: number;
     /** Whether this unit charge has been paid. */
     paid: boolean;
+    /** Meter reading at booking time — reference only, never charged. */
+    currentUnit?: number;
+    /** Optional meter photo (Cloudinary URL) as evidence of the reading. */
+    meterPhoto?: string;
 }
 
 export interface IFinancial {
