@@ -300,6 +300,19 @@ export const updateBookingSection = async (
                     receivedAt: new Date(),
                     proof,
                 });
+            } else if (payments.length > 0 && (proof || transactionId)) {
+                // No new amount this time, but the payment *details* changed —
+                // e.g. the manager added the cash receipt photo (proof is
+                // optional for Cash) or corrected the reference number on a
+                // later save. Attach them to the latest record instead of
+                // silently dropping them.
+                const latest = payments[payments.length - 1];
+
+                if (latest) {
+                    if (proof) latest.proof = proof;
+                    if (transactionId) latest.transactionId = transactionId;
+                    latest.mode = mode;
+                }
             }
 
             booking.payments = payments;
