@@ -1,5 +1,8 @@
 import { ApiError } from "../../utils/api-error.js";
 
+/** Applicant email optional hai — bhara ho to ye format follow karega. */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export type BookingType = "1 Day" | "More Day";
 
 export type BookingSection =
@@ -32,6 +35,8 @@ export const GOVERNMENT_ID_TYPES = [
     "PAN Card",
     "Driving Licence",
     "Passport",
+    /** Frontend ka catch-all option — ID number manually type kiya jaata hai. */
+    "ID Card",
 ] as const;
 
 export const HALL_REQUIREMENTS = [
@@ -221,8 +226,14 @@ export const validateApplicantSection = (
     if (appBody.address !== undefined) {
         result.address = requiredString(appBody.address, "applicant.address");
     }
+    // Email optional hai — bheja jaaye to sirf format check hota hai (khaali
+    // string ya missing field par koi error nahi).
     if (appBody.email !== undefined) {
-        result.email = asString(appBody.email);
+        const email = asString(appBody.email);
+        if (email && !EMAIL_REGEX.test(email)) {
+            throw new ApiError(400, "Invalid applicant.email");
+        }
+        result.email = email;
     }
     if (appBody.governmentIdType !== undefined) {
         const type = requiredString(appBody.governmentIdType, "applicant.governmentIdType");
@@ -231,6 +242,7 @@ export const validateApplicantSection = (
         }
         result.governmentIdType = type;
     }
+    // Manual entry — frontend se type kiya gaya ID number (optional).
     if (appBody.governmentIdNumber !== undefined) {
         result.governmentIdNumber = asString(appBody.governmentIdNumber);
     }
