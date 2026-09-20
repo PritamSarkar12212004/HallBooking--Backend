@@ -254,6 +254,23 @@ export const updateBookingSection = async (
             if (d.requirementQuantities !== undefined) {
                 booking.event.requirementQuantities = d.requirementQuantities;
             }
+            // Booking kis ke liye hai — "Myself" / "Someone Else" + us person
+            // ki details aur optional event photo.
+            if (d.bookingFor !== undefined) booking.event.bookingFor = d.bookingFor;
+            if (d.bookingForName !== undefined) booking.event.bookingForName = d.bookingForName;
+            if (d.bookingForRelation !== undefined) booking.event.bookingForRelation = d.bookingForRelation;
+            if (d.bookingForMobile !== undefined) booking.event.bookingForMobile = d.bookingForMobile;
+            if (d.bookingForPhoto !== undefined) booking.event.bookingForPhoto = d.bookingForPhoto;
+
+            // "Myself" par purani "someone else" details chhip rahengi nahi —
+            // naam/relation/mobile/photo clear kar dete hain taake detail screen
+            // par galat info na dikhe.
+            if (d.bookingFor === "Myself") {
+                booking.event.bookingForName = "";
+                booking.event.bookingForRelation = "";
+                booking.event.bookingForMobile = "";
+                booking.event.bookingForPhoto = "";
+            }
             break;
         }
         case "arrangements": {

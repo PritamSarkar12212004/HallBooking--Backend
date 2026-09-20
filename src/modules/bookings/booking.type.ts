@@ -57,6 +57,23 @@ export interface IEvent {
     customType?: string;
     /** Evidence / reference photo (Cloudinary URL). */
     evidencePhoto?: string;
+    /**
+     * Booking kis ke liye hai — applicant khud ("Myself") ya kisi aur
+     * ("Someone Else") ke liye. Khaali chhod dene par purani bookings ki tarah
+     * treat hoti hai (koi booking-for block nahi).
+     */
+    bookingFor?: string;
+    /** "Someone Else" ke liye booking hone par us person ka naam. */
+    bookingForName?: string;
+    /** Us person ka applicant se rishta (optional). */
+    bookingForRelation?: string;
+    /** Us person ka contact number (optional). */
+    bookingForMobile?: string;
+    /**
+     * "Someone Else" ke liye booking hone par event-related photo / proof
+     * (invite, ID, koi bhi document) ka Cloudinary URL — optional.
+     */
+    bookingForPhoto?: string;
     expectedAttendance: number;
     timeSlots: string[];
     hallRequirements: string[];

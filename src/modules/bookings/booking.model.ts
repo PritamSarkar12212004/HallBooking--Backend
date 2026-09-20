@@ -85,6 +85,38 @@ const bookingSchema = new Schema<IBooking>(
                 type: String,
                 default: "",
             },
+            /**
+             * Booking kis ke liye hai — "Myself" ya "Someone Else".
+             * Khaali = purani bookings (koi booking-for block nahi).
+             */
+            bookingFor: {
+                type: String,
+                default: "",
+                trim: true,
+            },
+            /** "Someone Else" ke liye booking hone par us person ka naam. */
+            bookingForName: {
+                type: String,
+                default: "",
+                trim: true,
+            },
+            /** Us person ka applicant se rishta (optional). */
+            bookingForRelation: {
+                type: String,
+                default: "",
+                trim: true,
+            },
+            /** Us person ka contact number (optional). */
+            bookingForMobile: {
+                type: String,
+                default: "",
+                trim: true,
+            },
+            /** Event-related photo / proof (Cloudinary URL) — optional. */
+            bookingForPhoto: {
+                type: String,
+                default: "",
+            },
             expectedAttendance: {
                 type: Number,
                 default: 0,

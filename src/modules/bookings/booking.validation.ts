@@ -79,6 +79,17 @@ export const GOVERNMENT_ID_NAME_MAX_LENGTH = 60;
 export const EVENT_CUSTOM_TYPE_MIN_LENGTH = 3;
 export const EVENT_CUSTOM_TYPE_MAX_LENGTH = 40;
 
+/** Booking kis ke liye hai — applicant khud ya kisi aur ke liye. */
+export const BOOKING_FOR_SELF = "Myself";
+export const BOOKING_FOR_OTHER = "Someone Else";
+export const BOOKING_FOR_VALUES = [BOOKING_FOR_SELF, BOOKING_FOR_OTHER] as const;
+
+/** "Someone Else" ke naam/relation/contact ki limits — frontend ke saath match. */
+export const BOOKING_FOR_NAME_MIN_LENGTH = 3;
+export const BOOKING_FOR_NAME_MAX_LENGTH = 60;
+export const BOOKING_FOR_RELATION_MAX_LENGTH = 40;
+export const BOOKING_FOR_MOBILE_MAX_LENGTH = 15;
+
 const parseDisplayDate = (value: string): Date => {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
@@ -211,6 +222,16 @@ export interface EventSectionInput {
     evidencePhoto?: string | undefined;
     /** Har selected requirement ki quantity (optional). */
     requirementQuantities?: { label: string; quantity: number }[];
+    /** Booking kis ke liye hai — "Myself" | "Someone Else" (optional). */
+    bookingFor?: string | undefined;
+    /** "Someone Else" ka naam — us case me zaroori. */
+    bookingForName?: string | undefined;
+    /** Us person ka applicant se rishta (optional). */
+    bookingForRelation?: string | undefined;
+    /** Us person ka contact number (optional). */
+    bookingForMobile?: string | undefined;
+    /** Event-related photo / proof ka Cloudinary URL (optional). */
+    bookingForPhoto?: string | undefined;
 }
 
 export const validateEventSection = (
@@ -265,6 +286,88 @@ export const validateEventSection = (
     if (eventBody.requirementQuantities !== undefined) {
         result.requirementQuantities = asRequirementQuantities(
             eventBody.requirementQuantities
+        );
+    }
+
+    // Booking kis ke liye hai — sirf do allowed values (optional).
+    if (eventBody.bookingFor !== undefined) {
+        const bookingFor = asString(eventBody.bookingFor) ?? "";
+
+        if (
+            bookingFor &&
+            !BOOKING_FOR_VALUES.includes(bookingFor as any)
+        ) {
+            throw new ApiError(
+                400,
+                `event.bookingFor must be one of: ${BOOKING_FOR_VALUES.join(", ")}`
+            );
+        }
+
+        result.bookingFor = bookingFor;
+    }
+
+    // "Someone Else" ka naam — diya gaya ho to limits ke andar hona chahiye.
+    if (eventBody.bookingForName !== undefined) {
+        const name = asString(eventBody.bookingForName) ?? "";
+
+        if (
+            name &&
+            (name.length < BOOKING_FOR_NAME_MIN_LENGTH ||
+                name.length > BOOKING_FOR_NAME_MAX_LENGTH)
+        ) {
+            throw new ApiError(
+                400,
+                `event.bookingForName must be ${BOOKING_FOR_NAME_MIN_LENGTH}-${BOOKING_FOR_NAME_MAX_LENGTH} characters`
+            );
+        }
+
+        result.bookingForName = name;
+    }
+
+    if (eventBody.bookingForRelation !== undefined) {
+        const relation = asString(eventBody.bookingForRelation) ?? "";
+
+        if (relation.length > BOOKING_FOR_RELATION_MAX_LENGTH) {
+            throw new ApiError(
+                400,
+                `event.bookingForRelation must be at most ${BOOKING_FOR_RELATION_MAX_LENGTH} characters`
+            );
+        }
+
+        result.bookingForRelation = relation;
+    }
+
+    if (eventBody.bookingForMobile !== undefined) {
+        const mobile = asString(eventBody.bookingForMobile) ?? "";
+
+        if (mobile && !/^[0-9]{6,15}$/.test(mobile)) {
+            throw new ApiError(
+                400,
+                `event.bookingForMobile must be ${BOOKING_FOR_MOBILE_MAX_LENGTH} digits or fewer`
+            );
+        }
+
+        result.bookingForMobile = mobile;
+    }
+
+    // Event-related photo / proof (Cloudinary URL) — optional.
+    if (eventBody.bookingForPhoto !== undefined) {
+        result.bookingForPhoto = asString(eventBody.bookingForPhoto) ?? "";
+    }
+
+    // "Someone Else" ke liye booking me naam ke bina kuch record nahi hota —
+    // isliye server par bhi yahi rule (client par bhi wahi validation hai).
+    const resolvedFor = result.bookingFor ?? undefined;
+    const resolvedName = result.bookingForName ?? "";
+
+    if (
+        resolvedFor === BOOKING_FOR_OTHER &&
+        eventBody.bookingForName !== undefined &&
+        resolvedName.length < BOOKING_FOR_NAME_MIN_LENGTH
+    ) {
+        throw new ApiError(
+            400,
+            `event.bookingForName is required when event.bookingFor is "${BOOKING_FOR_OTHER}"`
         );
     }
 
