@@ -452,7 +452,21 @@ const asUnitItems = (value: unknown): UnitItemInput[] => {
     if (!Array.isArray(value)) {
         throw new ApiError(400, "payment.units must be an array");
     }
-    return value.map((raw, index) => {
+
+    // Khaali rows auto-drop: jis unit me na **title** hai na **per-unit rate",
+    // uska billing me koi matlab nahi — use chup-chaap hata dete hain (purani
+    // app versions aisi rows bhej sakti hain). Title ya rate me se kuch bhi
+    // bhara ho to row aage jaati hai aur validation poori tarah us par chalti
+    // hai — frontend bhi Next par aisi rows hi bhejta hai (pruneUnitRowsForNext).
+    const filled = value.filter((raw) => {
+        const item = (raw ?? {}) as Record<string, unknown>;
+        const hasLabel = String(item?.label ?? "").trim().length > 0;
+        const hasRate = Number(item?.perUnit ?? 0) > 0;
+
+        return hasLabel && hasRate;
+    });
+
+    return filled.map((raw, index) => {
         const item = (raw ?? {}) as Record<string, unknown>;
         const label = requiredString(item.label, `payment.units[${index}].label`);
         const quantity = asNumber(item.quantity ?? 0, `payment.units[${index}].quantity`);
