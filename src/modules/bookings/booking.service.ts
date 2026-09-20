@@ -403,6 +403,18 @@ export const updateBookingSection = async (
                 }
             }
 
+            // Proof hataya gaya (ya galti se unit ka meter photo proof ban gaya
+            // tha) — latest payment se clear kar dete hain. Naya proof aane par
+            // ye flag client bhejta hi nahi.
+            if (d.removePaymentProof === true && payments.length > 0) {
+                const latest = payments[payments.length - 1];
+
+                if (latest && latest.proof) {
+                    latest.proof = "";
+                    paymentDetailsUpdated = true;
+                }
+            }
+
             booking.payments = payments;
 
             // Audit trail: har save (jab kuch badla ho) snapshot ke saath, taake

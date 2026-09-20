@@ -423,6 +423,12 @@ export interface PaymentSectionInput {
     mode?: string;
     transactionNumber?: string | undefined;
     paymentProofPhoto?: string | undefined;
+    /**
+     * Latest payment ka proof hata do (staff ne trash tap kiya, ya galti se
+     * lagaya gaya proof clean karna hai). Explicit flag hai — khaali string se
+     * clear nahi hota, warna har save purana proof uda deti.
+     */
+    removePaymentProof?: boolean;
     /** Event-end marker — staff swiped "End Event" on Finalize. */
     finalize?: boolean;
 }
@@ -505,6 +511,9 @@ export const validatePaymentSection = (
     }
     if (payBody.paymentProofPhoto !== undefined) {
         result.paymentProofPhoto = asString(payBody.paymentProofPhoto);
+    }
+    if (payBody.removePaymentProof !== undefined) {
+        result.removePaymentProof = payBody.removePaymentProof === true;
     }
     if (payBody.finalize !== undefined) {
         result.finalize = payBody.finalize === true;
