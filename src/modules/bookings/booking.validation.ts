@@ -84,11 +84,17 @@ export const BOOKING_FOR_SELF = "Myself";
 export const BOOKING_FOR_OTHER = "Someone Else";
 export const BOOKING_FOR_VALUES = [BOOKING_FOR_SELF, BOOKING_FOR_OTHER] as const;
 
-/** "Someone Else" ke naam/relation/contact ki limits — frontend ke saath match. */
+/** Mobile numbers har jagah 10 digits ke — frontend ke PhoneFunction ke saath match. */
+export const MOBILE_LENGTH = 10;
+
+/**
+ * "Someone Else" ke naam/relation/contact ki limits — frontend ke saath match.
+ * Contact number baaki app ki tarah 10 digits ka hi hota hai (MOBILE_LENGTH).
+ */
 export const BOOKING_FOR_NAME_MIN_LENGTH = 3;
 export const BOOKING_FOR_NAME_MAX_LENGTH = 60;
 export const BOOKING_FOR_RELATION_MAX_LENGTH = 40;
-export const BOOKING_FOR_MOBILE_MAX_LENGTH = 15;
+export const BOOKING_FOR_MOBILE_MAX_LENGTH = MOBILE_LENGTH;
 
 const parseDisplayDate = (value: string): Date => {
     const parsed = new Date(value);
@@ -100,6 +106,36 @@ const parseDisplayDate = (value: string): Date => {
 
 const asString = (value: unknown): string | undefined =>
     typeof value === "string" ? value.trim() : undefined;
+
+const MOBILE_REGEX = new RegExp(`^[0-9]{${MOBILE_LENGTH}}$`);
+
+/** Optional mobile: khaali chalega, bhara ho to poora 10 digits ka hona chahiye. */
+const asOptionalMobile = (value: unknown, label: string): string => {
+    const mobile = asString(value) ?? "";
+
+    if (mobile && !MOBILE_REGEX.test(mobile)) {
+        throw new ApiError(
+            400,
+            `${label} must be a valid ${MOBILE_LENGTH}-digit mobile number`
+        );
+    }
+
+    return mobile;
+};
+
+/** Required mobile — format bhi check hota hai. */
+const asRequiredMobile = (value: unknown, label: string): string => {
+    const mobile = requiredString(value, label);
+
+    if (!MOBILE_REGEX.test(mobile)) {
+        throw new ApiError(
+            400,
+            `${label} must be a valid ${MOBILE_LENGTH}-digit mobile number`
+        );
+    }
+
+    return mobile;
+};
 
 const requiredString = (value: unknown, label: string): string => {
     const str = asString(value);
@@ -338,16 +374,10 @@ export const validateEventSection = (
     }
 
     if (eventBody.bookingForMobile !== undefined) {
-        const mobile = asString(eventBody.bookingForMobile) ?? "";
-
-        if (mobile && !/^[0-9]{6,15}$/.test(mobile)) {
-            throw new ApiError(
-                400,
-                `event.bookingForMobile must be ${BOOKING_FOR_MOBILE_MAX_LENGTH} digits or fewer`
-            );
-        }
-
-        result.bookingForMobile = mobile;
+        result.bookingForMobile = asOptionalMobile(
+            eventBody.bookingForMobile,
+            "event.bookingForMobile"
+        );
     }
 
     // Event-related photo / proof (Cloudinary URL) — optional.
@@ -401,7 +431,7 @@ export const validateApplicantSection = (
         result.organization = asString(appBody.organization);
     }
     if (appBody.mobile !== undefined) {
-        result.mobile = requiredString(appBody.mobile, "applicant.mobile");
+        result.mobile = asRequiredMobile(appBody.mobile, "applicant.mobile");
     }
     if (appBody.address !== undefined) {
         result.address = requiredString(appBody.address, "applicant.address");
@@ -471,7 +501,7 @@ export const validateArrangementsSection = (
         if (dn) result.decoratorName = dn;
     }
     if (arrBody.decoratorContact !== undefined) {
-        const c = asString(arrBody.decoratorContact);
+        const c = asOptionalMobile(arrBody.decoratorContact, "arrangements.decoratorContact");
         if (c) result.decoratorContact = c;
     }
     if (arrBody.decorationTiming !== undefined) {
@@ -482,7 +512,7 @@ export const validateArrangementsSection = (
         if (cn) result.catererName = cn;
     }
     if (arrBody.catererContact !== undefined) {
-        const c = asString(arrBody.catererContact);
+        const c = asOptionalMobile(arrBody.catererContact, "arrangements.catererContact");
         if (c) result.catererContact = c;
     }
 
