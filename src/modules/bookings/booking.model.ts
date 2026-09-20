@@ -247,6 +247,10 @@ const bookingSchema = new Schema<IBooking>(
                     },
                 ],
                 balanceAfter: { type: Number, default: 0 },
+                // Revision ke waqt ka finance picture (charges + units + totals)
+                // — history UI isse amount aur units alag-alag sections me
+                // dikhata hai.
+                snapshot: { type: Schema.Types.Mixed, default: null },
             },
         ],
 

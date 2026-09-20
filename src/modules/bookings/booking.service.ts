@@ -6,7 +6,16 @@ import {
     notifyBookingConfirmedToAdmin,
 } from "./booking-notification.service.js";
 import { ApiError } from "../../utils/api-error.js";
-import type { IBooking, ICaterer, IDecorator, PaymentMode } from "./booking.type.js";
+import type {
+    IBooking,
+    ICaterer,
+    IChargeItem,
+    IDecorator,
+    IFinanceChange,
+    IFinanceSnapshot,
+    IUnitItem,
+    PaymentMode,
+} from "./booking.type.js";
 import type {
     HallCalendarInput,
     BookingSection,
@@ -97,6 +106,74 @@ const recomputeFinancialTotals = (booking: IBooking): void => {
     financial.totalAmount = total;
     financial.advancePaid = paid;
     financial.balanceAmount = Math.max(0, total - paid);
+};
+
+/** Charges ka comparison key — history me sirf tab entry banti hai jab kuch badla ho. */
+const financeChargesKey = (charges?: IChargeItem[] | null): string =>
+    (Array.isArray(charges) ? charges : [])
+        .map(
+            (c) =>
+                `${String(c?.label ?? "").trim()}|${Number(c?.amount) || 0}|${
+                    Number(c?.paid) || 0
+                }`,
+        )
+        .sort()
+        .join("||");
+
+/** Units ka comparison key (rate, reading, photo, paid — sab cover). */
+const financeUnitsKey = (units?: IUnitItem[] | null): string =>
+    (Array.isArray(units) ? units : [])
+        .map(
+            (u) =>
+                `${String(u?.label ?? "").trim()}|${Number(u?.quantity) || 0}|${
+                    Number(u?.perUnit) || 0
+                }|${Number(u?.currentUnit) || 0}|${u?.meterPhoto ?? ""}|${
+                    u?.paid === true ? 1 : 0
+                }`,
+        )
+        .sort()
+        .join("||");
+
+/**
+ * Revision ke waqt ka poora finance picture — history me isse "actual amount
+ * (requirement vs paid)" aur "units (kitna vs kitna paid)" dikhaya jaata hai.
+ */
+const buildFinanceSnapshot = (booking: IBooking): IFinanceSnapshot => {
+    const financial = booking.financial;
+    const charges = Array.isArray(financial?.charges) ? financial.charges : [];
+    const units = Array.isArray(financial?.units) ? financial.units : [];
+    const unitsTotal = units.reduce(
+        (sum, u) => sum + (Number(u.amount) || 0),
+        0,
+    );
+    const unitsPaid = units.reduce(
+        (sum, u) => sum + (u.paid ? Number(u.amount) || 0 : 0),
+        0,
+    );
+
+    return {
+        totalAmount: Number(financial?.totalAmount) || 0,
+        advancePaid: Number(financial?.advancePaid) || 0,
+        balanceAmount: Number(financial?.balanceAmount) || 0,
+        securityDeposit: Number(financial?.securityDeposit) || 0,
+        mode: financial?.mode ?? "",
+        charges: charges.map((c) => ({
+            label: c.label,
+            amount: Number(c.amount) || 0,
+            paid: Number(c.paid) || 0,
+        })),
+        units: units.map((u) => ({
+            label: u.label,
+            quantity: Number(u.quantity) || 0,
+            perUnit: Number(u.perUnit) || 0,
+            amount: Number(u.amount) || 0,
+            paid: u.paid === true,
+            currentUnit: Number(u.currentUnit) || 0,
+            meterPhoto: u.meterPhoto ?? "",
+        })),
+        unitsTotal,
+        unitsPaid,
+    };
 };
 
 export type SectionData =
@@ -203,6 +280,9 @@ export const updateBookingSection = async (
                 securityDeposit: booking.financial.securityDeposit ?? 0,
                 totalAmount: booking.financial.totalAmount ?? 0,
                 advancePaid: booking.financial.advancePaid ?? 0,
+                // Charges/units ka is update se pehle ka picture.
+                chargesKey: financeChargesKey(booking.financial.charges),
+                unitsKey: financeUnitsKey(booking.financial.units),
             };
 
             // Section 1: replace the actual amount breakdown.
@@ -255,7 +335,11 @@ export const updateBookingSection = async (
                 totalAmount: booking.financial.totalAmount ?? 0,
                 advancePaid: booking.financial.advancePaid ?? 0,
             };
-            const changes = (["totalAmount", "advancePaid"] as const)
+
+            const mode = (d.mode ?? booking.financial.mode ?? "Cash") as PaymentMode;
+            booking.financial.mode = mode;
+
+            const changes: IFinanceChange[] = (["totalAmount", "advancePaid"] as const)
                 .filter((k) => before[k] !== after[k])
                 .map((k) => ({
                     field: k,
@@ -263,20 +347,22 @@ export const updateBookingSection = async (
                     to: Number(after[k] ?? 0),
                 }));
 
-            if (changes.length > 0) {
-                const editor = await User.findById(userId).select("name phone");
-                if (!booking.financeHistory) booking.financeHistory = [];
-                booking.financeHistory.push({
-                    editedByName: editor?.name ?? "Unknown",
-                    editedByMobile: editor?.phone ?? "",
-                    editedAt: new Date(),
-                    changes,
-                    balanceAfter: booking.financial.balanceAmount ?? 0,
+            // Amount ke alawa jo bhi badla (units, charge heads, deposit) wo bhi
+            // history me jaata hai — warna unit reading ka update chup-chaap ho
+            // jaata tha.
+            if (before.unitsKey !== financeUnitsKey(booking.financial.units)) {
+                changes.push({ field: "unitsChanged", from: 0, to: 1 });
+            }
+            if (before.chargesKey !== financeChargesKey(booking.financial.charges)) {
+                changes.push({ field: "chargesChanged", from: 0, to: 1 });
+            }
+            if (before.securityDeposit !== after.securityDeposit) {
+                changes.push({
+                    field: "securityDeposit",
+                    from: Number(before.securityDeposit ?? 0),
+                    to: Number(after.securityDeposit ?? 0),
                 });
             }
-
-            const mode = (d.mode ?? booking.financial.mode ?? "Cash") as PaymentMode;
-            booking.financial.mode = mode;
 
             const transactionId = d.transactionNumber ?? "";
             const proof = d.paymentProofPhoto ?? "";
@@ -290,6 +376,7 @@ export const updateBookingSection = async (
             );
             const newAdvance = booking.financial.advancePaid ?? 0;
             const receivedNow = Math.max(0, newAdvance - previouslyReceived);
+            let paymentDetailsUpdated = false;
 
             if (receivedNow > 0) {
                 payments.push({
@@ -312,10 +399,34 @@ export const updateBookingSection = async (
                     if (proof) latest.proof = proof;
                     if (transactionId) latest.transactionId = transactionId;
                     latest.mode = mode;
+                    paymentDetailsUpdated = true;
                 }
             }
 
             booking.payments = payments;
+
+            // Audit trail: har save (jab kuch badla ho) snapshot ke saath, taake
+            // history me revision ke waqt ka amount + units dikh sake.
+            if (changes.length > 0 || paymentDetailsUpdated) {
+                if (paymentDetailsUpdated) {
+                    changes.push({
+                        field: "paymentDetailsUpdated",
+                        from: 0,
+                        to: 1,
+                    });
+                }
+
+                const editor = await User.findById(userId).select("name phone");
+                if (!booking.financeHistory) booking.financeHistory = [];
+                booking.financeHistory.push({
+                    editedByName: editor?.name ?? "Unknown",
+                    editedByMobile: editor?.phone ?? "",
+                    editedAt: new Date(),
+                    changes,
+                    balanceAfter: booking.financial.balanceAmount ?? 0,
+                    snapshot: buildFinanceSnapshot(booking),
+                });
+            }
 
             const advance = booking.financial.advancePaid ?? 0;
             const balance = booking.financial.balanceAmount ?? 0;

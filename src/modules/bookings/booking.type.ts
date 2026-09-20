@@ -150,6 +150,23 @@ export interface IFinanceChange {
     to: number;
 }
 
+export interface IFinanceSnapshot {
+    /** Us revision ke baad ka poora picture — UI isse sections me dikhata hai. */
+    totalAmount: number;
+    advancePaid: number;
+    balanceAmount: number;
+    securityDeposit?: number;
+    mode?: string;
+    /** Actual amount heads (required vs paid per head). */
+    charges: IChargeItem[];
+    /** Units ka hisaab — rate, reading, amount aur paid status. */
+    units: IUnitItem[];
+    /** sum(units.amount) — kitne units ka bill bana. */
+    unitsTotal?: number;
+    /** Kitne units ka paisa aa chuka hai. */
+    unitsPaid?: number;
+}
+
 export interface IFinanceHistoryEntry {
     editedByName: string;
     editedByMobile: string;
@@ -157,6 +174,12 @@ export interface IFinanceHistoryEntry {
     changes: IFinanceChange[];
     /** Resulting balance after this update (plain value, not a diff). */
     balanceAfter?: number;
+    /**
+     * Revision ke waqt ka finance snapshot. Isse history me "pehle actual
+     * amount (requirement vs paid)" aur "phir units (kitna vs paid)" dikhaya
+     * jaata hai — sirf totals ka diff nahi.
+     */
+    snapshot?: IFinanceSnapshot;
 }
 
 
