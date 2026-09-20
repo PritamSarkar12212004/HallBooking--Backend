@@ -408,6 +408,8 @@ export interface UnitItemInput {
     currentUnit: number;
     /** Optional meter photo (Cloudinary URL) captured with the reading. */
     meterPhoto?: string | undefined;
+    /** Closing meter photo (event end) — closing reading ka evidence. */
+    closingPhoto?: string | undefined;
     amount: number;
     paid: boolean;
 }
@@ -480,6 +482,8 @@ const asUnitItems = (value: unknown): UnitItemInput[] => {
             currentUnit: asNumber(item.currentUnit ?? 0, `payment.units[${index}].currentUnit`),
             // Optional meter photo (URL) — reading ka evidence.
             meterPhoto: asString(item.meterPhoto) ?? "",
+            // Closing meter photo (URL) — event end / Finalize se aati hai.
+            closingPhoto: asString(item.closingPhoto) ?? "",
             amount: quantity * perUnit,
             paid: item.paid === true,
         };

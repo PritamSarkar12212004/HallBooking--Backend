@@ -181,6 +181,9 @@ const bookingSchema = new Schema<IBooking>(
                             currentUnit: { type: Number, default: 0, min: 0 },
                             // Optional meter photo (Cloudinary URL) as reading evidence.
                             meterPhoto: { type: String, default: "" },
+                            // Closing meter photo (event end / Finalize) — closing
+                            // reading ka evidence. Booking-start photo se alag.
+                            closingPhoto: { type: String, default: "" },
                             amount: { type: Number, default: 0, min: 0 },
                             paid: { type: Boolean, default: false },
                         },

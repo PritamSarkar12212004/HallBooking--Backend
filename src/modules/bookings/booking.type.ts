@@ -116,6 +116,12 @@ export interface IUnitItem {
     currentUnit?: number;
     /** Optional meter photo (Cloudinary URL) as evidence of the reading. */
     meterPhoto?: string;
+    /**
+     * Closing meter photo (Cloudinary URL) — event end (Finalize) par li gayi
+     * closing reading ka evidence. `meterPhoto` booking-start ki photo hai;
+     * dono alag rakhe jaate hain taake history dono dikhaye.
+     */
+    closingPhoto?: string;
 }
 
 export interface IFinancial {

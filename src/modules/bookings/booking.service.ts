@@ -128,8 +128,8 @@ const financeUnitsKey = (units?: IUnitItem[] | null): string =>
                 `${String(u?.label ?? "").trim()}|${Number(u?.quantity) || 0}|${
                     Number(u?.perUnit) || 0
                 }|${Number(u?.currentUnit) || 0}|${u?.meterPhoto ?? ""}|${
-                    u?.paid === true ? 1 : 0
-                }`,
+                    u?.closingPhoto ?? ""
+                }|${u?.paid === true ? 1 : 0}`,
         )
         .sort()
         .join("||");
@@ -170,6 +170,7 @@ const buildFinanceSnapshot = (booking: IBooking): IFinanceSnapshot => {
             paid: u.paid === true,
             currentUnit: Number(u.currentUnit) || 0,
             meterPhoto: u.meterPhoto ?? "",
+            closingPhoto: u.closingPhoto ?? "",
         })),
         unitsTotal,
         unitsPaid,
@@ -298,13 +299,20 @@ export const updateBookingSection = async (
             // paid is honored so the final settlement at event end can mark
             // the calculated units as paid in the same request.
             if (d.units !== undefined) {
-                booking.financial.units = d.units.map((u) => ({
+                booking.financial.units = d.units.map((u, i) => ({
                     label: u.label,
                     quantity: u.quantity,
                     perUnit: u.perUnit,
                     currentUnit: u.currentUnit ?? 0,
                     // Optional meter photo — reading ka evidence.
                     meterPhoto: u.meterPhoto ?? "",
+                    // Closing photo (event end). Naya request closingPhoto bhej
+                    // raha ho (Finalize) to wo use hota hai; warna jo saved hai
+                    // wahi rehta hai — idhar-udhar se photo wipe nahi hoti.
+                    closingPhoto:
+                        u.closingPhoto ??
+                        booking.financial.units?.[i]?.closingPhoto ??
+                        "",
                     amount: u.quantity * u.perUnit,
                     paid: u.paid === true,
                 }));
