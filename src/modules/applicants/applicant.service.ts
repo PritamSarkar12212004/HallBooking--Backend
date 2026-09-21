@@ -28,7 +28,7 @@ const photoOrDefault = {
  * mobile number the lower-cased, trimmed name is used instead, so an applicant
  * without a phone number is still grouped instead of being duplicated.
  */
-const IDENTITY_KEY = {
+export const IDENTITY_KEY = {
     $let: {
         vars: {
             digits: {
