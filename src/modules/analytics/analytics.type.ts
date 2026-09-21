@@ -295,6 +295,28 @@ export interface AnalyticsReports {
     }[];
 }
 
+export interface AnalyticsDocumentRow {
+    id: string;
+    bookingId: string;
+    bookingNumber: string;
+    customerName: string;
+    mobile: string;
+    eventName: string;
+    hallName: string;
+    /** Machine key — UI isse filter chips banata hai. */
+    type: string;
+    label: string;
+    url: string;
+    /** Payment proof me actual received time, warna booking banne ka time. */
+    addedAt: string;
+}
+
+export interface AnalyticsDocuments {
+    total: number;
+    byType: { label: string; value: number; key: string }[];
+    rows: AnalyticsDocumentRow[];
+}
+
 export interface CeoAnalytics {
     period: AnalyticsPeriod;
     generatedAt: string;
@@ -304,5 +326,6 @@ export interface CeoAnalytics {
     venue: AnalyticsVenue;
     customers: AnalyticsCustomers;
     staff: AnalyticsStaff;
+    documents: AnalyticsDocuments;
     reports: AnalyticsReports;
 }

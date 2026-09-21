@@ -25,6 +25,7 @@ import type { BookingStatus, IBooking } from "../bookings/booking.type.js";
 import type {
     AnalyticsCustomerRow,
     AnalyticsDepositRow,
+    AnalyticsDocumentRow,
     AnalyticsEventRow,
     AnalyticsEventRevenueRow,
     AnalyticsEvents,
@@ -59,6 +60,7 @@ const MAX_ASSIGNMENTS = 50;
 const MAX_PENDING = 50;
 const MAX_TOP_CUSTOMERS = 10;
 const MAX_DEPOSIT_ROWS = 50;
+const MAX_DOCUMENT_ROWS = 150;
 const MAX_DAILY_POINTS = 14;
 const MAX_WEEKLY_POINTS = 8;
 const MAX_MONTHLY_POINTS = 12;
@@ -875,6 +877,118 @@ export const getCeoAnalytics = async (query: AnalyticsQuery): Promise<CeoAnalyti
         assignments,
     };
 
+    // ── Documents ───────────────────────────────────────────────────────
+    // Booking ke andar jo bhi files/photo upload hoti hain, sab ek jagah.
+    // (Verification state DB me nahi hai, isliye sirf listing + preview.)
+    interface DocumentDraft {
+        type: string;
+        label: string;
+        url: string;
+        addedAt: Date;
+    }
+
+    const documentRows: AnalyticsDocumentRow[] = [];
+
+    periodDocs.forEach((booking) => {
+        const createdAt = booking.createdAt ? new Date(booking.createdAt) : now;
+        const bookingId = bookingIdOf(booking);
+        const drafts: DocumentDraft[] = [];
+
+        const push = (type: string, label: string, url?: string, addedAt?: Date) => {
+            const value = String(url ?? "").trim();
+            if (!value) return;
+            drafts.push({ type, label, url: value, addedAt: addedAt ?? createdAt });
+        };
+
+        push("eventImage", "Event Photo", booking.eventImage);
+        push(
+            "idProof",
+            String(booking.applicant?.governmentId?.type ?? "").trim() || "ID Proof",
+            booking.applicant?.governmentId?.photo,
+        );
+        push("eventEvidence", "Event Evidence", booking.event?.evidencePhoto);
+        push("bookingForPhoto", "Booking For Photo", booking.event?.bookingForPhoto);
+
+        (booking.financial?.units ?? []).forEach((unit) => {
+            const name = String(unit?.label ?? "Unit").trim();
+            push(
+                "meterStart",
+                `Meter Reading – ${name}`,
+                unit?.meterPhoto,
+            );
+            push(
+                "meterClosing",
+                `Closing Meter – ${name}`,
+                unit?.closingPhoto,
+            );
+        });
+
+        push("applicantSignature", "Applicant Signature", booking.signatures?.applicantPhoto);
+        push("managerSignature", "Manager Signature", booking.signatures?.managerPhoto);
+
+        (booking.payments ?? []).forEach((payment) => {
+            push(
+                "paymentProof",
+                `Payment Proof – ${String(payment?.mode ?? "Payment")}`,
+                payment?.proof,
+                payment?.receivedAt ? new Date(payment.receivedAt) : createdAt,
+            );
+        });
+
+        (booking.handover?.items ?? []).forEach((item) => {
+            push(
+                "handover",
+                `Handover – ${String(item?.label ?? "Item").trim()}`,
+                item?.photo,
+            );
+        });
+
+        drafts.forEach((draft, index) => {
+            documentRows.push({
+                id: `${bookingId}-${draft.type}-${index}`,
+                bookingId,
+                bookingNumber: String(booking.bookingNumber ?? ""),
+                customerName: customerNameOf(booking),
+                mobile: customerMobileOf(booking),
+                eventName: eventNameOf(booking),
+                hallName: hallNameOf(booking),
+                type: draft.type,
+                label: draft.label,
+                url: draft.url,
+                addedAt: draft.addedAt.toISOString(),
+            });
+        });
+    });
+
+    documentRows.sort(
+        (a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime(),
+    );
+
+    const documentTypeLabels: { key: string; label: string }[] = [
+        { key: "paymentProof", label: "Payment proofs" },
+        { key: "meterStart", label: "Meter readings" },
+        { key: "meterClosing", label: "Closing meters" },
+        { key: "applicantSignature", label: "Applicant signatures" },
+        { key: "managerSignature", label: "Manager signatures" },
+        { key: "idProof", label: "ID proofs" },
+        { key: "eventImage", label: "Event photos" },
+        { key: "eventEvidence", label: "Event evidence" },
+        { key: "bookingForPhoto", label: "Booking-for photos" },
+        { key: "handover", label: "Handover photos" },
+    ];
+
+    const documents = {
+        total: documentRows.length,
+        byType: documentTypeLabels
+            .map((entry) => ({
+                key: entry.key,
+                label: entry.label,
+                value: documentRows.filter((row) => row.type === entry.key).length,
+            }))
+            .filter((entry) => entry.value > 0),
+        rows: documentRows.slice(0, MAX_DOCUMENT_ROWS),
+    };
+
     // ── Reports & analytics ─────────────────────────────────────────────
     const bucketRevenue = (bucketFrom: Date, bucketTo: Date): number =>
         periodPayments
@@ -1032,6 +1146,7 @@ export const getCeoAnalytics = async (query: AnalyticsQuery): Promise<CeoAnalyti
         venue,
         customers,
         staff,
+        documents,
         reports,
     };
 };
