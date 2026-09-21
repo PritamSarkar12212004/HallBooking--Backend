@@ -1,33 +1,17 @@
 import { Request, Response, NextFunction } from "express";
 import { ApiError } from "../utils/api-error.js";
 import { AuthenticatedRequest } from "./token.middleware.js";
+import { isCeoNumber, resolveAccessRole } from "../access/index.js";
 
 /**
- * Phone numbers allowed to change hall level settings (payment QR).
- * Same whitelist the mobile app uses to show the CEO experience.
+ * CEO-only endpoints (jaise hall ka payment QR) ke liye gate.
+ *
+ * Sirf `src/access/access.config.ts` ke `CEO_ACCESS` (ya `CEO_PHONES` env)
+ * wale numbers hi pass hote hain — `ADMIN_ACCESS` wale nahi, kyunki app me ye
+ * screen/action sirf CEO ko dikhta hai. Whitelist hi source of truth hai,
+ * isliye purane token par bhi sahi role hi lagta hai.
  */
-const DEFAULT_CEO_PHONES = ["7796419792"];
 
-/** Roles that are allowed even when the phone is not whitelisted. */
-const CEO_ROLES: readonly string[] = ["CEO", "ADMIN"];
-
-const normalizePhone = (phone?: string): string =>
-    String(phone ?? "").replace(/\D/g, "").slice(-10);
-
-const ceoPhones = (): string[] => {
-    const fromEnv = (process.env.CEO_PHONES ?? "")
-        .split(",")
-        .map(normalizePhone)
-        .filter((phone) => phone.length === 10);
-
-    return fromEnv.length > 0 ? fromEnv : DEFAULT_CEO_PHONES;
-};
-
-/**
- * Allows only the hall CEO (role based OR whitelisted phone) to continue.
- * The JWT carries the phone, so the whitelist works even for accounts whose
- * `role` was never promoted to admin in the database.
- */
 export const requireCeo = (
     req: Request,
     _res: Response,
@@ -39,11 +23,12 @@ export const requireCeo = (
             throw new ApiError(401, "Access token is required");
         }
 
-        const role = String(user.role ?? "").toUpperCase();
-        const hasCeoRole = CEO_ROLES.indexOf(role) !== -1;
-        const isCeoPhone = ceoPhones().includes(normalizePhone(user.phone));
+        // Access list ke hisaab se role (token purana ho to bhi sahi role mile).
+        const role = (
+            user.accessRole ?? resolveAccessRole(user.phone)
+        ).toUpperCase();
 
-        if (!hasCeoRole && !isCeoPhone) {
+        if (!isCeoNumber(user.phone) && role !== "CEO") {
             throw new ApiError(403, "Only the CEO can update the hall payment QR");
         }
 

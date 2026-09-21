@@ -1,6 +1,9 @@
+import type { AccessRole } from "../../access/access.type.js";
+
 export enum UserRole {
     User = "user",
     Admin = "admin",
+    Ceo = "ceo",
 }
 
 export type UserGender = "male" | "female" | "other" | "";
@@ -18,6 +21,12 @@ export interface User {
 
 export interface PublicUser extends User {
     _id: string;
+    /**
+     * Access list (`src/access/access.config.ts`) ka role — app isi se CEO UI
+     * deti hai. DB ke `role` se alag rakha gaya hai taake list update karte hi
+     * (bina migration) sab jagah naya role lag jaaye.
+     */
+    accessRole: AccessRole;
     createdAt?: Date;
     updatedAt?: Date;
 }

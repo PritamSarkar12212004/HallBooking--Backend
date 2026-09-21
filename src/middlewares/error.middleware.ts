@@ -30,6 +30,7 @@ export const errorMiddleware = (
     res.status(statusCode).json({
         success: false,
         message,
+        ...(error instanceof ApiError && error.code ? { code: error.code } : {}),
         ...(statusCode >= 500 && process.env.NODE_ENV !== "production"
             ? { stack: error instanceof Error ? error.stack : undefined }
             : {}),

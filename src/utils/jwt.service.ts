@@ -7,6 +7,8 @@ export interface AuthTokenPayload {
     userId: string;
     phone: string;
     role: string;
+    /** Access list ka role (`CEO` / `ADMIN` / `USER`) — app isse CEO UI deti hai. */
+    accessRole?: string;
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || "hallbooking_dev_secret";

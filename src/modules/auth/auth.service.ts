@@ -10,6 +10,10 @@ import {
     UserGender,
     UserRole,
 } from "./auth.types.js";
+import {
+    assertNumberAllowed,
+    resolveAccessRole,
+} from "../../access/index.js";
 
 const OTP_EXPIRATION_SECONDS = Number(process.env.OTP_EXPIRATION_SECONDS) || 300;
 const OTP_LENGTH = 6;
@@ -24,6 +28,50 @@ const generateOtp = (): string => {
 const otpHash = (code: string): string =>
     crypto.createHash("sha256").update(code).digest("hex");
 
+/** Access list ka role -> DB ka `role` (logs/analytics ke liye synced rakha jaata hai). */
+const dbRoleFor = (phone: string): UserRole => {
+    const accessRole = resolveAccessRole(phone);
+
+    if (accessRole === "CEO") {
+        return UserRole.Ceo;
+    }
+    if (accessRole === "ADMIN") {
+        return UserRole.Admin;
+    }
+
+    return UserRole.User;
+};
+
+/**
+ * User ka DB role access list ke hisaab se set rakhta hai.
+ *
+ * Access list hi source of truth hai — isliye kisi ka number CEO list me aaye
+ * to uski agli login par role apne aap `ceo` ho jaata hai (manual DB edit nahi).
+ */
+const syncUserRole = async (doc: {
+    _id: unknown;
+    phone: string;
+    role: UserRole;
+    save: () => Promise<unknown>;
+}): Promise<void> => {
+    const expected = dbRoleFor(doc.phone);
+
+    if (doc.role === expected) {
+        return;
+    }
+
+    doc.role = expected;
+    await doc.save();
+};
+
+const signUserToken = (doc: { _id: unknown; phone: string; role: UserRole }) =>
+    signToken({
+        userId: String(doc._id),
+        phone: doc.phone,
+        role: doc.role,
+        accessRole: resolveAccessRole(doc.phone),
+    });
+
 const toPublicUser = (doc: { _id: unknown } & UserShape): PublicUser => {
     const publicUser: PublicUser = {
         _id: String(doc._id),
@@ -33,6 +81,7 @@ const toPublicUser = (doc: { _id: unknown } & UserShape): PublicUser => {
         city: doc.city,
         gender: doc.gender,
         role: doc.role,
+        accessRole: resolveAccessRole(doc.phone),
         isProfileComplete: doc.isProfileComplete,
     };
 
@@ -47,6 +96,9 @@ const isUserProfileComplete = (doc: UserShape): boolean =>
     Boolean(doc.name && doc.city && doc.gender);
 
 export const sendOtp = async (phone: string): Promise<SendOtpResult> => {
+    // Access gate — sirf whitelisted numbers ko OTP jaata hai (SMS waste na ho).
+    assertNumberAllowed(phone);
+
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + OTP_EXPIRATION_SECONDS * 1000);
 
@@ -83,29 +135,25 @@ export const verifyOtp = async (phone: string, code: string): Promise<VerifyOtpR
 
     await OtpModel.deleteOne({ phone });
 
+    // Access gate (double check) — send-otp ke baad agar list badal gayi ho to
+    // yahan bhi block ho jaata hai.
+    assertNumberAllowed(phone);
+
     const existing = await UserModel.findOne({ phone });
     if (existing) {
-        const token = signToken({
-            userId: String(existing._id),
-            phone: existing.phone,
-            role: existing.role,
-        });
+        await syncUserRole(existing);
 
         return {
             isNewUser: !isUserProfileComplete(existing),
             isExistingUser: true,
-            token,
+            token: signUserToken(existing),
             user: toPublicUser(existing),
         };
     }
 
     // New number -> create a bare account; frontend will run profile setup.
-    const user = await UserModel.create({ phone });
-    const token = signToken({
-        userId: String(user._id),
-        phone: user.phone,
-        role: user.role,
-    });
+    const user = await UserModel.create({ phone, role: dbRoleFor(phone) });
+    const token = signUserToken(user);
     return { isNewUser: true, isExistingUser: false, token, user: toPublicUser(user) };
 };
 
@@ -143,13 +191,10 @@ export const completeProfile = async (input: CompleteProfileInput): Promise<Veri
         user.photo = input.photo;
     }
     user.isProfileComplete = true;
+    user.role = dbRoleFor(user.phone);
     await user.save();
 
-    const token = signToken({
-        userId: String(user._id),
-        phone: user.phone,
-        role: user.role,
-    });
+    const token = signUserToken(user);
 
     return { isNewUser: false, isExistingUser: true, token, user: toPublicUser(user) };
 };

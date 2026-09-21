@@ -12,6 +12,20 @@ import {
     errorMiddleware,
     notFoundHandler,
 } from "./middlewares/error.middleware.js";
+import { describeAccessList, isAccessGateEnabled } from "./access/index.js";
+import { logger } from "./utils/logger.js";
+
+/**
+ * Boot par allowed numbers log kar diye jaate hain — warna "login kyun nahi ho
+ * raha" debug karna mushkil ho jaata hai (gate sirf whitelist wale numbers ko
+ * andar aane deta hai).
+ */
+logger.info(
+    isAccessGateEnabled()
+        ? "App access gate ON"
+        : "App access gate OFF (ACCESS_GATE_ENABLED=false)",
+    { allowedNumbers: describeAccessList() }
+);
 
 const app = express();
 app.use(helmet());
