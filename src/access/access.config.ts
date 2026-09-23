@@ -1,7 +1,7 @@
 import type { AccessEntry } from "./access.type.js";
 
 export const CEO_ACCESS: AccessEntry[] = [
-  { phone: "885065651", name: "Vikram Sir", role: "CEO" },
+  { phone: "8850656051", name: "Vikram Sir", role: "CEO" },
 ];
 
 export const ADMIN_ACCESS: AccessEntry[] = [
