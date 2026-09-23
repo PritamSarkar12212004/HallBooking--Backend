@@ -8,6 +8,7 @@ export const ADMIN_ACCESS: AccessEntry[] = [
   { phone: "7620876689", name: "Pritam Jio", role: "ADMIN" },
   { phone: "7743990982", name: "Juhi", role: "ADMIN" },
   { phone: "9834759005", name: "Vipul", role: "ADMIN" },
+  { phone: "7558666122", name: "Harshal Sir", role: "ADMIN" },
 ];
 
 export const ACCESS_GATE_ENV = {
